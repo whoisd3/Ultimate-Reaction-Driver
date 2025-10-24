@@ -1,0 +1,23 @@
+{
+  "name": "ultimate-reaction-driver",
+  "version": "1.0.0",
+  "description": "Advanced endless driving game with VR/AR support, multiplayer, and progression system",
+  "main": "index.html",
+  "scripts": {
+    "start": "python -m http.server 8000",
+    "dev": "python -m http.server 8000"
+  },
+  "keywords": [
+    "game",
+    "driving",
+    "threejs",
+    "webgl",
+    "webrtc",
+    "webxr",
+    "pwa"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {}
+}

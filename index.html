@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Ultimate Reaction Driver - Advanced endless driving game with VR/AR support">
+    <meta name="theme-color" content="#1a1a2e">
+    <title>Ultimate Reaction Driver</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/png" href="icon.png">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loading-screen">
+        <div class="loading-content">
+            <h1>Ultimate Reaction Driver</h1>
+            <div class="loading-bar">
+                <div class="loading-progress" id="loading-progress"></div>
+            </div>
+            <p id="loading-text">Loading...</p>
+        </div>
+    </div>
+
+    <!-- Main Menu -->
+    <div id="main-menu" class="menu hidden">
+        <div class="menu-content">
+            <h1 class="game-title">Ultimate Reaction Driver</h1>
+            
+            <!-- Player Stats -->
+            <div class="player-stats">
+                <div class="stat">
+                    <span class="stat-label">Level:</span>
+                    <span class="stat-value" id="player-level">1</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">XP:</span>
+                    <span class="stat-value" id="player-xp">0</span>
+                    <span class="stat-value">/</span>
+                    <span class="stat-value" id="player-xp-needed">100</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Skill Points:</span>
+                    <span class="stat-value" id="skill-points">0</span>
+                </div>
+            </div>
+            
+            <div class="xp-bar">
+                <div class="xp-progress" id="xp-progress"></div>
+            </div>
+
+            <!-- Menu Buttons -->
+            <div class="menu-buttons">
+                <button class="menu-btn" id="btn-classic">Classic Mode</button>
+                <button class="menu-btn" id="btn-time-attack" disabled>Time Attack (Unlock at Lvl 5)</button>
+                <button class="menu-btn" id="btn-survival" disabled>Survival (Unlock at Lvl 10)</button>
+                <button class="menu-btn" id="btn-multiplayer">Multiplayer</button>
+                <button class="menu-btn" id="btn-garage">Garage</button>
+                <button class="menu-btn" id="btn-skills">Skills</button>
+                <button class="menu-btn" id="btn-leaderboard">Leaderboard</button>
+                <button class="menu-btn" id="btn-settings">Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game HUD -->
+    <div id="game-hud" class="hidden">
+        <div class="hud-top">
+            <div class="hud-stat">
+                <span class="hud-label">Score:</span>
+                <span class="hud-value" id="hud-score">0</span>
+            </div>
+            <div class="hud-stat">
+                <span class="hud-label">Speed:</span>
+                <span class="hud-value" id="hud-speed">0</span>
+                <span class="hud-unit">km/h</span>
+            </div>
+            <div class="hud-stat">
+                <span class="hud-label">Distance:</span>
+                <span class="hud-value" id="hud-distance">0</span>
+                <span class="hud-unit">m</span>
+            </div>
+            <div class="hud-stat" id="hud-timer-container">
+                <span class="hud-label">Time:</span>
+                <span class="hud-value" id="hud-timer">0:00</span>
+            </div>
+        </div>
+        
+        <div class="hud-bottom">
+            <button class="hud-btn" id="btn-pause">Pause</button>
+            <button class="hud-btn" id="btn-vr">Enter VR</button>
+        </div>
+    </div>
+
+    <!-- Pause Menu -->
+    <div id="pause-menu" class="menu hidden">
+        <div class="menu-content">
+            <h2>Paused</h2>
+            <div class="menu-buttons">
+                <button class="menu-btn" id="btn-resume">Resume</button>
+                <button class="menu-btn" id="btn-quit">Quit to Menu</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Garage Menu -->
+    <div id="garage-menu" class="menu hidden">
+        <div class="menu-content">
+            <h2>Garage</h2>
+            <div id="vehicle-list" class="vehicle-list"></div>
+            <div class="menu-buttons">
+                <button class="menu-btn" id="btn-garage-back">Back</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Skills Menu -->
+    <div id="skills-menu" class="menu hidden">
+        <div class="menu-content">
+            <h2>Skills</h2>
+            <p class="skill-points-display">Available Points: <span id="available-skill-points">0</span></p>
+            <div id="skills-list" class="skills-list">
+                <div class="skill-item">
+                    <div class="skill-info">
+                        <h3>Speed Boost</h3>
+                        <p>Increase maximum speed</p>
+                        <p class="skill-level">Level: <span id="skill-speed-level">0</span>/5</p>
+                    </div>
+                    <button class="skill-btn" id="btn-skill-speed">Upgrade</button>
+                </div>
+                <div class="skill-item">
+                    <div class="skill-info">
+                        <h3>XP Multiplier</h3>
+                        <p>Gain more XP from actions</p>
+                        <p class="skill-level">Level: <span id="skill-xp-level">0</span>/5</p>
+                    </div>
+                    <button class="skill-btn" id="btn-skill-xp">Upgrade</button>
+                </div>
+                <div class="skill-item">
+                    <div class="skill-info">
+                        <h3>Handling</h3>
+                        <p>Improve vehicle handling</p>
+                        <p class="skill-level">Level: <span id="skill-handling-level">0</span>/5</p>
+                    </div>
+                    <button class="skill-btn" id="btn-skill-handling">Upgrade</button>
+                </div>
+            </div>
+            <div class="menu-buttons">
+                <button class="menu-btn" id="btn-skills-back">Back</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaderboard Menu -->
+    <div id="leaderboard-menu" class="menu hidden">
+        <div class="menu-content">
+            <h2>Leaderboard</h2>
+            <div class="mode-tabs">
+                <button class="tab-btn active" data-mode="classic">Classic</button>
+                <button class="tab-btn" data-mode="timeattack">Time Attack</button>
+                <button class="tab-btn" data-mode="survival">Survival</button>
+            </div>
+            <div id="leaderboard-list" class="leaderboard-list"></div>
+            <div class="menu-buttons">
+                <button class="menu-btn" id="btn-leaderboard-back">Back</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Multiplayer Menu -->
+    <div id="multiplayer-menu" class="menu hidden">
+        <div class="menu-content">
+            <h2>Multiplayer</h2>
+            <div class="multiplayer-options">
+                <div class="mp-section">
+                    <h3>Host Game</h3>
+                    <p>Room ID: <span id="room-id">-</span></p>
+                    <button class="menu-btn" id="btn-host">Create Room</button>
+                </div>
+                <div class="mp-section">
+                    <h3>Join Game</h3>
+                    <input type="text" id="join-room-id" placeholder="Enter Room ID">
+                    <button class="menu-btn" id="btn-join">Join Room</button>
+                </div>
+                <div class="mp-section">
+                    <p id="mp-status">Not connected</p>
+                    <div id="connected-players"></div>
+                </div>
+            </div>
+            <div class="menu-buttons">
+                <button class="menu-btn" id="btn-multiplayer-back">Back</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Menu -->
+    <div id="settings-menu" class="menu hidden">
+        <div class="menu-content">
+            <h2>Settings</h2>
+            <div class="settings-list">
+                <div class="setting-item">
+                    <label>Music Volume</label>
+                    <input type="range" id="music-volume" min="0" max="100" value="70">
+                </div>
+                <div class="setting-item">
+                    <label>SFX Volume</label>
+                    <input type="range" id="sfx-volume" min="0" max="100" value="80">
+                </div>
+                <div class="setting-item">
+                    <label>Graphics Quality</label>
+                    <select id="graphics-quality">
+                        <option value="low">Low</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High</option>
+                    </select>
+                </div>
+            </div>
+            <div class="menu-buttons">
+                <button class="menu-btn" id="btn-settings-back">Back</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="game-over-screen" class="menu hidden">
+        <div class="menu-content">
+            <h2>Game Over</h2>
+            <div class="game-stats">
+                <div class="stat-row">
+                    <span>Score:</span>
+                    <span id="final-score">0</span>
+                </div>
+                <div class="stat-row">
+                    <span>Distance:</span>
+                    <span id="final-distance">0</span> m
+                </div>
+                <div class="stat-row">
+                    <span>XP Earned:</span>
+                    <span id="xp-earned">0</span>
+                </div>
+                <div class="stat-row level-up hidden" id="level-up-message">
+                    <span class="level-up-text">🎉 LEVEL UP! 🎉</span>
+                </div>
+            </div>
+            <div class="menu-buttons">
+                <button class="menu-btn" id="btn-retry">Retry</button>
+                <button class="menu-btn" id="btn-game-over-menu">Main Menu</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3D Game Canvas -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/simplepeer@9.11.1/simplepeer.min.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
