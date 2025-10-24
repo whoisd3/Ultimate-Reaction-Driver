@@ -10,8 +10,12 @@ class GameEngine {
         this.player = null;
         this.obstacles = [];
         this.particles = [];
+        this.powerUps = [];
+        this.activePowerUps = new Map();
         this.gameState = 'loading';
         this.currentMode = 'classic';
+        this.weatherSystem = null;
+        this.currentWeather = 'clear';
         this.score = 0;
         this.distance = 0;
         this.speed = 0;
@@ -23,6 +27,19 @@ class GameEngine {
         this.audioContext = null;
         this.sounds = {};
         this.musicNode = null;
+        
+        // Notification queue system
+        this.notificationQueue = [];
+        this.currentNotification = null;
+        this.lastNotificationTime = 0;
+        
+        // Performance monitoring
+        this.performanceMonitor = {
+            frameCount: 0,
+            lastTime: 0,
+            fps: 60,
+            adaptiveQuality: true
+        };
         
         // WebRTC Multiplayer
         this.peer = null;
@@ -44,41 +61,89 @@ class GameEngine {
     }
 
     async init() {
-        this.setupRenderer();
-        this.setupScene();
-        this.setupCamera();
-        this.setupLights();
-        this.setupAudio();
-        this.createRoad();
-        this.createPlayer();
-        this.setupInput();
-        this.setupWebXR();
-        
-        // Load player progress
-        await playerProgress.load();
-        this.updateUI();
-        
-        // Simulate loading
-        await this.simulateLoading();
-        
-        this.hideLoading();
-        this.showMainMenu();
-        
-        // Start render loop
-        this.animate();
+        try {
+            console.log('Initializing Ultimate Reaction Driver...');
+            
+            // Check for Three.js
+            if (typeof THREE === 'undefined') {
+                throw new Error('Three.js library not loaded');
+            }
+            console.log('Three.js loaded successfully');
+            
+            this.setupRenderer();
+            this.setupScene();
+            this.setupCamera();
+            this.setupLights();
+            this.setupAudio();
+            this.createRoad();
+            this.createPlayer();
+            this.setupInput();
+            this.setupWebXR();
+            
+            // Load player progress
+            await playerProgress.load();
+            this.updateUI();
+            
+            // Simulate loading
+            await this.simulateLoading();
+            
+            this.hideLoading();
+            this.showMainMenu();
+            
+            console.log('Game initialized successfully!');
+            
+            // Create speed lines effect
+            this.createSpeedLines();
+            
+            // Start render loop
+            this.animate();
+        } catch (error) {
+            console.error('Game initialization failed:', error);
+            this.showError('Game failed to initialize: ' + error.message);
+        }
     }
 
     setupRenderer() {
-        this.renderer = new THREE.WebGLRenderer({
-            canvas: document.getElementById('game-canvas'),
-            antialias: true,
-            alpha: true
-        });
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setPixelRatio(window.devicePixelRatio);
-        this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        this.renderer.xr.enabled = true;
+        try {
+            const canvas = document.getElementById('game-canvas');
+            if (!canvas) {
+                throw new Error('Game canvas not found');
+            }
+            
+            // Detect mobile device
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            
+            this.renderer = new THREE.WebGLRenderer({
+                canvas: canvas,
+                antialias: !isMobile, // Disable antialiasing on mobile for performance
+                alpha: true,
+                powerPreference: isMobile ? 'low-power' : 'high-performance'
+            });
+            
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+            
+            // Optimize pixel ratio for mobile
+            const pixelRatio = isMobile ? Math.min(window.devicePixelRatio, 2) : Math.min(window.devicePixelRatio, 2);
+            this.renderer.setPixelRatio(pixelRatio);
+            
+            this.renderer.shadowMap.enabled = !isMobile; // Disable shadows on mobile
+            if (!isMobile) {
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            }
+            
+            this.renderer.xr.enabled = true;
+            this.renderer.outputEncoding = THREE.sRGBEncoding;
+            this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            this.renderer.toneMappingExposure = 1.25;
+            
+            // Store mobile flag for other optimizations
+            this.isMobile = isMobile;
+            
+            console.log(`Renderer setup complete (Mobile: ${isMobile})`);
+        } catch (error) {
+            console.error('Renderer setup failed:', error);
+            throw error;
+        }
     }
 
     setupScene() {
@@ -99,39 +164,117 @@ class GameEngine {
     }
 
     setupLights() {
-        // Directional light (sun)
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        // Directional light (sun/moon)
+        const directionalLight = new THREE.DirectionalLight(0x8888ff, 1.2);
         directionalLight.position.set(50, 100, 50);
-        directionalLight.castShadow = true;
-        directionalLight.shadow.mapSize.width = 2048;
-        directionalLight.shadow.mapSize.height = 2048;
+        
+        // Only enable shadows on desktop
+        if (!this.isMobile) {
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            directionalLight.shadow.camera.near = 0.5;
+            directionalLight.shadow.camera.far = 200;
+            directionalLight.shadow.camera.left = -50;
+            directionalLight.shadow.camera.right = 50;
+            directionalLight.shadow.camera.top = 50;
+            directionalLight.shadow.camera.bottom = -50;
+        }
+        
         this.scene.add(directionalLight);
 
-        // Ambient light
-        const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+        // Ambient light for general illumination
+        const ambientLight = new THREE.AmbientLight(0x202040, 0.3);
         this.scene.add(ambientLight);
 
-        // Point lights for atmosphere
-        const pointLight1 = new THREE.PointLight(0x00d4ff, 2, 100);
-        pointLight1.position.set(-30, 20, 0);
-        this.scene.add(pointLight1);
-
-        const pointLight2 = new THREE.PointLight(0xff006e, 2, 100);
-        pointLight2.position.set(30, 20, 0);
-        this.scene.add(pointLight2);
+        // Reduce atmospheric lights on mobile
+        const lightCount = this.isMobile ? 2 : 4;
+        const colors = [
+            { color: 0x00d4ff, intensity: 3 },
+            { color: 0xff006e, intensity: 3 },
+            { color: 0x88ff00, intensity: 2 },
+            { color: 0xff8800, intensity: 2 }
+        ];
+        
+        colors.slice(0, lightCount).forEach((lightData, index) => {
+            const pointLight = new THREE.PointLight(lightData.color, lightData.intensity, 80);
+            const angle = (index / lightCount) * Math.PI * 2;
+            pointLight.position.set(
+                Math.cos(angle) * 40,
+                20,
+                Math.sin(angle) * 40
+            );
+            this.scene.add(pointLight);
+        });
+        
+        // Create a simple skybox effect
+        const skyGeometry = new THREE.SphereGeometry(400, this.isMobile ? 16 : 32, this.isMobile ? 16 : 32);
+        const skyMaterial = new THREE.MeshBasicMaterial({
+            color: 0x001122,
+            side: THREE.BackSide,
+            fog: false
+        });
+        const sky = new THREE.Mesh(skyGeometry, skyMaterial);
+        this.scene.add(sky);
+        
+        // Add stars (fewer on mobile)
+        const starGeometry = new THREE.BufferGeometry();
+        const starPositions = [];
+        const starColors = [];
+        const starCount = this.isMobile ? 500 : 1000;
+        
+        for (let i = 0; i < starCount; i++) {
+            const radius = 350;
+            const u = Math.random();
+            const v = Math.random();
+            const theta = 2 * Math.PI * u;
+            const phi = Math.acos(2 * v - 1);
+            
+            const x = radius * Math.sin(phi) * Math.cos(theta);
+            const y = Math.abs(radius * Math.cos(phi)); // Only upper hemisphere
+            const z = radius * Math.sin(phi) * Math.sin(theta);
+            
+            starPositions.push(x, y, z);
+            
+            const intensity = Math.random() * 0.8 + 0.2;
+            starColors.push(intensity, intensity, intensity);
+        }
+        
+        starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
+        starGeometry.setAttribute('color', new THREE.Float32BufferAttribute(starColors, 3));
+        
+        const starMaterial = new THREE.PointsMaterial({
+            size: 2,
+            vertexColors: true,
+            fog: false
+        });
+        
+        const stars = new THREE.Points(starGeometry, starMaterial);
+        this.scene.add(stars);
+        
+        console.log('Enhanced lighting system initialized');
     }
 
     setupAudio() {
         try {
-            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            // Check if Web Audio is supported
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContext) {
+                console.warn('Web Audio API not supported');
+                return;
+            }
+            
+            this.audioContext = new AudioContext();
             
             // Create oscillators for simple sound effects
             this.createSimpleSounds();
             
             // Background music with Web Audio API
             this.createBackgroundMusic();
+            
+            console.log('Audio system initialized');
         } catch (e) {
-            console.warn('Web Audio API not supported:', e);
+            console.warn('Web Audio API setup failed:', e);
         }
     }
 
@@ -143,86 +286,241 @@ class GameEngine {
             playing: false
         };
 
-        // Crash sound
+        // Enhanced crash sound with multiple frequencies
         this.sounds.crash = () => {
             if (!this.audioContext) return;
-            const osc = this.audioContext.createOscillator();
-            const gain = this.audioContext.createGain();
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(100, this.audioContext.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(30, this.audioContext.currentTime + 0.5);
-            gain.gain.setValueAtTime(0.3, this.audioContext.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.5);
-            osc.connect(gain);
-            gain.connect(this.audioContext.destination);
-            osc.start();
-            osc.stop(this.audioContext.currentTime + 0.5);
+            
+            // Create multiple oscillators for a complex crash sound
+            const frequencies = [100, 150, 80, 200];
+            frequencies.forEach((freq, index) => {
+                const osc = this.audioContext.createOscillator();
+                const gain = this.audioContext.createGain();
+                const filter = this.audioContext.createBiquadFilter();
+                
+                osc.type = index % 2 === 0 ? 'sawtooth' : 'square';
+                osc.frequency.setValueAtTime(freq, this.audioContext.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(freq * 0.3, this.audioContext.currentTime + 0.8);
+                
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(800, this.audioContext.currentTime);
+                filter.frequency.exponentialRampToValueAtTime(200, this.audioContext.currentTime + 0.8);
+                
+                gain.gain.setValueAtTime(0.15, this.audioContext.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + 0.8);
+                
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.audioContext.destination);
+                
+                osc.start();
+                osc.stop(this.audioContext.currentTime + 0.8);
+            });
+            
+            // Add noise burst
+            const noiseBuffer = this.createNoiseBuffer(0.3);
+            const noiseSource = this.audioContext.createBufferSource();
+            const noiseGain = this.audioContext.createGain();
+            
+            noiseSource.buffer = noiseBuffer;
+            noiseGain.gain.setValueAtTime(0.2, this.audioContext.currentTime);
+            noiseGain.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + 0.3);
+            
+            noiseSource.connect(noiseGain);
+            noiseGain.connect(this.audioContext.destination);
+            noiseSource.start();
         };
 
-        // Pickup sound
+        // Enhanced pickup sound with harmonic series
         this.sounds.pickup = () => {
             if (!this.audioContext) return;
+            
+            const baseFreq = 440;
+            const harmonics = [1, 2, 3, 4];
+            
+            harmonics.forEach((harmonic, index) => {
+                const osc = this.audioContext.createOscillator();
+                const gain = this.audioContext.createGain();
+                
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(baseFreq * harmonic, this.audioContext.currentTime);
+                
+                const volume = 0.1 / harmonic; // Decreasing volume for higher harmonics
+                gain.gain.setValueAtTime(volume, this.audioContext.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + 0.3);
+                
+                osc.connect(gain);
+                gain.connect(this.audioContext.destination);
+                osc.start();
+                osc.stop(this.audioContext.currentTime + 0.3);
+            });
+        };
+        
+        // Whoosh sound for lane changes
+        this.sounds.whoosh = () => {
+            if (!this.audioContext) return;
+            
             const osc = this.audioContext.createOscillator();
             const gain = this.audioContext.createGain();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(440, this.audioContext.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(880, this.audioContext.currentTime + 0.1);
-            gain.gain.setValueAtTime(0.3, this.audioContext.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.2);
-            osc.connect(gain);
+            const filter = this.audioContext.createBiquadFilter();
+            
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(200, this.audioContext.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(80, this.audioContext.currentTime + 0.2);
+            
+            filter.type = 'highpass';
+            filter.frequency.setValueAtTime(100, this.audioContext.currentTime);
+            
+            gain.gain.setValueAtTime(0.15, this.audioContext.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + 0.2);
+            
+            osc.connect(filter);
+            filter.connect(gain);
             gain.connect(this.audioContext.destination);
+            
             osc.start();
             osc.stop(this.audioContext.currentTime + 0.2);
         };
+        
+        // Power-up collection sound
+        this.sounds.powerUp = () => {
+            if (!this.audioContext) return;
+            
+            const notes = [440, 554, 659, 880]; // A4, C#5, E5, A5 (A major chord)
+            
+            notes.forEach((freq, index) => {
+                setTimeout(() => {
+                    const osc = this.audioContext.createOscillator();
+                    const gain = this.audioContext.createGain();
+                    
+                    osc.type = 'sine';
+                    osc.frequency.value = freq;
+                    
+                    gain.gain.setValueAtTime(0.1, this.audioContext.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + 0.4);
+                    
+                    osc.connect(gain);
+                    gain.connect(this.audioContext.destination);
+                    osc.start();
+                    osc.stop(this.audioContext.currentTime + 0.4);
+                }, index * 50);
+            });
+        };
+    }
+    
+    createNoiseBuffer(duration) {
+        const sampleRate = this.audioContext.sampleRate;
+        const length = sampleRate * duration;
+        const buffer = this.audioContext.createBuffer(1, length, sampleRate);
+        const data = buffer.getChannelData(0);
+        
+        for (let i = 0; i < length; i++) {
+            data[i] = (Math.random() * 2 - 1) * 0.1;
+        }
+        
+        return buffer;
     }
 
     createBackgroundMusic() {
         if (!this.audioContext) return;
         
-        // Simple synthesized background music
-        const createTone = (freq, duration, delay) => {
-            const osc = this.audioContext.createOscillator();
-            const gain = this.audioContext.createGain();
-            osc.type = 'sine';
-            osc.frequency.value = freq;
-            gain.gain.setValueAtTime(0.05, this.audioContext.currentTime + delay);
-            gain.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + delay + duration);
-            osc.connect(gain);
-            gain.connect(this.audioContext.destination);
-            osc.start(this.audioContext.currentTime + delay);
-            osc.stop(this.audioContext.currentTime + delay + duration);
-        };
-
-        // Play simple melody loop
+        // Create ambient/atmospheric soundscape instead of melodic music
         this.musicLoop = () => {
-            if (this.gameState === 'playing') {
-                const notes = [440, 494, 523, 587, 523, 494, 440, 392];
-                notes.forEach((freq, i) => {
-                    createTone(freq, 0.3, i * 0.4);
-                });
+            if (this.gameState !== 'playing') {
+                setTimeout(() => this.musicLoop(), 100);
+                return;
             }
-            setTimeout(() => this.musicLoop(), 3200);
+            
+            const startTime = this.audioContext.currentTime;
+            
+            // Create ambient drone sounds
+            this.createAmbientDrone(110, 8, startTime); // Low drone
+            this.createAmbientDrone(165, 6, startTime + 1); // Mid drone
+            this.createAmbientDrone(220, 4, startTime + 2); // Higher drone
+            
+            // Add subtle noise sweeps
+            this.createNoiseSweep(startTime + 0.5);
+            this.createNoiseSweep(startTime + 4);
+            
+            setTimeout(() => this.musicLoop(), 8000); // 8 second loop
         };
+    }
+    
+    createAmbientDrone(frequency, duration, startTime) {
+        const osc = this.audioContext.createOscillator();
+        const gain = this.audioContext.createGain();
+        const filter = this.audioContext.createBiquadFilter();
+        
+        osc.type = 'sine';
+        osc.frequency.value = frequency;
+        
+        filter.type = 'lowpass';
+        filter.frequency.value = frequency * 2;
+        filter.Q.value = 2;
+        
+        gain.gain.setValueAtTime(0, startTime);
+        gain.gain.linearRampToValueAtTime(0.015, startTime + 1);
+        gain.gain.setValueAtTime(0.015, startTime + duration - 1);
+        gain.gain.linearRampToValueAtTime(0, startTime + duration);
+        
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.audioContext.destination);
+        
+        osc.start(startTime);
+        osc.stop(startTime + duration);
+    }
+    
+    createNoiseSweep(startTime) {
+        const noiseBuffer = this.createNoiseBuffer(2);
+        const source = this.audioContext.createBufferSource();
+        const gain = this.audioContext.createGain();
+        const filter = this.audioContext.createBiquadFilter();
+        
+        source.buffer = noiseBuffer;
+        
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(400, startTime);
+        filter.frequency.exponentialRampToValueAtTime(1200, startTime + 2);
+        filter.Q.value = 8;
+        
+        gain.gain.setValueAtTime(0, startTime);
+        gain.gain.linearRampToValueAtTime(0.008, startTime + 0.3);
+        gain.gain.linearRampToValueAtTime(0, startTime + 2);
+        
+        source.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.audioContext.destination);
+        
+        source.start(startTime);
     }
 
     startEngineSound() {
         if (!this.audioContext || this.sounds.engine.playing) return;
         
-        const osc = this.audioContext.createOscillator();
-        const gain = this.audioContext.createGain();
+        // Resume audio context if suspended (required by modern browsers)
+        if (this.audioContext.state === 'suspended') {
+            this.audioContext.resume();
+        }
         
-        osc.type = 'sawtooth';
-        osc.frequency.value = 80;
-        gain.gain.value = 0.1;
-        
-        osc.connect(gain);
-        gain.connect(this.audioContext.destination);
-        
-        osc.start();
-        
-        this.sounds.engine.oscillator = osc;
-        this.sounds.engine.gainNode = gain;
-        this.sounds.engine.playing = true;
+        try {
+            const osc = this.audioContext.createOscillator();
+            const gain = this.audioContext.createGain();
+            
+            osc.type = 'sawtooth';
+            osc.frequency.value = 80;
+            gain.gain.value = 0.1;
+            
+            osc.connect(gain);
+            gain.connect(this.audioContext.destination);
+            
+            osc.start();
+            
+            this.sounds.engine.oscillator = osc;
+            this.sounds.engine.gainNode = gain;
+            this.sounds.engine.playing = true;
+        } catch (error) {
+            console.warn('Failed to start engine sound:', error);
+        }
     }
 
     stopEngineSound() {
@@ -249,12 +547,33 @@ class GameEngine {
         const segmentLength = 50;
         const numSegments = Math.ceil(roadLength / segmentLength) + 2;
 
+        // Create road texture
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+        
+        // Dark asphalt base
+        ctx.fillStyle = '#1a1a1a';
+        ctx.fillRect(0, 0, 512, 512);
+        
+        // Add some texture noise
+        for (let i = 0; i < 1000; i++) {
+            ctx.fillStyle = `rgba(${Math.random() * 50 + 20}, ${Math.random() * 50 + 20}, ${Math.random() * 50 + 20}, 0.3)`;
+            ctx.fillRect(Math.random() * 512, Math.random() * 512, 2, 2);
+        }
+        
+        const roadTexture = new THREE.CanvasTexture(canvas);
+        roadTexture.wrapS = THREE.RepeatWrapping;
+        roadTexture.wrapT = THREE.RepeatWrapping;
+        roadTexture.repeat.set(1, 10);
+
         for (let i = 0; i < numSegments; i++) {
             const geometry = new THREE.PlaneGeometry(roadWidth, segmentLength);
             const material = new THREE.MeshStandardMaterial({
-                color: 0x1a1a1a,
-                roughness: 0.8,
-                metalness: 0.2
+                map: roadTexture,
+                roughness: 0.9,
+                metalness: 0.1
             });
             const segment = new THREE.Mesh(geometry, material);
             segment.rotation.x = -Math.PI / 2;
@@ -263,9 +582,13 @@ class GameEngine {
             this.scene.add(segment);
             this.roadSegments.push(segment);
 
-            // Road markings
+            // Improved road markings
             const markingGeometry = new THREE.PlaneGeometry(1, 5);
-            const markingMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+            const markingMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0xffff00,
+                transparent: true,
+                opacity: 0.8
+            });
             
             for (let j = 0; j < 5; j++) {
                 const marking = new THREE.Mesh(markingGeometry, markingMaterial);
@@ -273,11 +596,34 @@ class GameEngine {
                 marking.position.set(0, 0.1, -i * segmentLength - j * 10);
                 segment.add(marking);
             }
+            
+            // Add lane dividers
+            const dividerGeometry = new THREE.PlaneGeometry(0.5, 3);
+            const dividerMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.6
+            });
+            
+            [-10, 10].forEach(x => {
+                for (let j = 0; j < 10; j++) {
+                    const divider = new THREE.Mesh(dividerGeometry, dividerMaterial);
+                    divider.rotation.x = -Math.PI / 2;
+                    divider.position.set(x, 0.1, -i * segmentLength - j * 5);
+                    segment.add(divider);
+                }
+            });
         }
 
-        // Side barriers
+        // Enhanced side barriers with lighting
         const barrierGeometry = new THREE.BoxGeometry(2, 3, 500);
-        const barrierMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+        const barrierMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xff3366,
+            emissive: 0x330011,
+            emissiveIntensity: 0.1,
+            metalness: 0.8,
+            roughness: 0.2
+        });
         
         const leftBarrier = new THREE.Mesh(barrierGeometry, barrierMaterial);
         leftBarrier.position.set(-roadWidth / 2 - 1, 1.5, -250);
@@ -288,30 +634,78 @@ class GameEngine {
         rightBarrier.position.set(roadWidth / 2 + 1, 1.5, -250);
         rightBarrier.castShadow = true;
         this.scene.add(rightBarrier);
+        
+        // Add side lights
+        for (let i = 0; i < 10; i++) {
+            const lightGeometry = new THREE.SphereGeometry(0.5, 8, 8);
+            const lightMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0x00ffff,
+                emissive: 0x00ffff,
+                emissiveIntensity: 0.5
+            });
+            
+            const leftLight = new THREE.Mesh(lightGeometry, lightMaterial);
+            leftLight.position.set(-roadWidth / 2 - 3, 3, -i * 50);
+            this.scene.add(leftLight);
+            
+            const rightLight = new THREE.Mesh(lightGeometry, lightMaterial);
+            rightLight.position.set(roadWidth / 2 + 3, 3, -i * 50);
+            this.scene.add(rightLight);
+            
+            // Add point lights for actual illumination
+            const pointLight1 = new THREE.PointLight(0x00ffff, 0.5, 30);
+            pointLight1.position.copy(leftLight.position);
+            this.scene.add(pointLight1);
+            
+            const pointLight2 = new THREE.PointLight(0x00ffff, 0.5, 30);
+            pointLight2.position.copy(rightLight.position);
+            this.scene.add(pointLight2);
+        }
     }
 
     createPlayer() {
         const vehicleData = playerProgress.getCurrentVehicle();
         
-        // Create vehicle body
+        // Create vehicle body with metallic material
         const bodyGeometry = new THREE.BoxGeometry(3, 1.5, 5);
         const bodyMaterial = new THREE.MeshStandardMaterial({
             color: vehicleData.color || 0x00d4ff,
-            metalness: 0.7,
-            roughness: 0.3
+            metalness: 0.9,
+            roughness: 0.1,
+            emissive: new THREE.Color(vehicleData.color || 0x00d4ff).multiplyScalar(0.05),
+            envMapIntensity: 1.0
         });
         const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
         body.castShadow = true;
         
-        // Create vehicle top
+        // Create vehicle top with glass material
         const topGeometry = new THREE.BoxGeometry(2.5, 0.8, 3);
-        const top = new THREE.Mesh(topGeometry, bodyMaterial);
+        const topMaterial = new THREE.MeshStandardMaterial({
+            color: 0x2222ff,
+            metalness: 0.1,
+            roughness: 0.1,
+            opacity: 0.8,
+            transparent: true,
+            envMapIntensity: 2.0
+        });
+        const top = new THREE.Mesh(topGeometry, topMaterial);
         top.position.y = 1.15;
         top.castShadow = true;
         
-        // Create wheels
+        // Create enhanced wheels with rim details
         const wheelGeometry = new THREE.CylinderGeometry(0.5, 0.5, 0.3, 16);
-        const wheelMaterial = new THREE.MeshStandardMaterial({ color: 0x000000 });
+        const wheelMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x111111,
+            metalness: 0.8,
+            roughness: 0.3
+        });
+        
+        const rimGeometry = new THREE.CylinderGeometry(0.3, 0.3, 0.31, 8);
+        const rimMaterial = new THREE.MeshStandardMaterial({
+            color: 0x888888,
+            metalness: 1.0,
+            roughness: 0.1
+        });
         
         const wheels = [];
         const wheelPositions = [
@@ -323,25 +717,92 @@ class GameEngine {
         
         wheelPositions.forEach(pos => {
             const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
+            const rim = new THREE.Mesh(rimGeometry, rimMaterial);
+            
             wheel.rotation.z = Math.PI / 2;
+            rim.rotation.z = Math.PI / 2;
+            
             wheel.position.set(...pos);
+            rim.position.set(...pos);
+            
             wheel.castShadow = true;
+            rim.castShadow = true;
+            
             wheels.push(wheel);
+            wheels.push(rim); // Add rims to wheels array for rotation
         });
+        
+        // Add headlights
+        const headlightGeometry = new THREE.SphereGeometry(0.2, 8, 8);
+        const headlightMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            emissive: 0xffffff,
+            emissiveIntensity: 0.8
+        });
+        
+        const leftHeadlight = new THREE.Mesh(headlightGeometry, headlightMaterial);
+        leftHeadlight.position.set(-1, 0.5, 2.6);
+        
+        const rightHeadlight = new THREE.Mesh(headlightGeometry, headlightMaterial);
+        rightHeadlight.position.set(1, 0.5, 2.6);
+        
+        // Add headlight illumination
+        const headlightSpot1 = new THREE.SpotLight(0xffffff, 2, 50, Math.PI / 6, 0.1);
+        headlightSpot1.position.copy(leftHeadlight.position);
+        headlightSpot1.target.position.set(-1, 0, -10);
+        headlightSpot1.castShadow = true;
+        
+        const headlightSpot2 = new THREE.SpotLight(0xffffff, 2, 50, Math.PI / 6, 0.1);
+        headlightSpot2.position.copy(rightHeadlight.position);
+        headlightSpot2.target.position.set(1, 0, -10);
+        headlightSpot2.castShadow = true;
+        
+        // Create targets as objects that will be added to the player group
+        const leftTarget = new THREE.Object3D();
+        leftTarget.position.set(-1, 0, -10);
+        const rightTarget = new THREE.Object3D();
+        rightTarget.position.set(1, 0, -10);
+        
+        // Add taillights
+        const taillightMaterial = new THREE.MeshBasicMaterial({
+            color: 0xff0000,
+            emissive: 0xff0000,
+            emissiveIntensity: 0.3
+        });
+        
+        const leftTaillight = new THREE.Mesh(headlightGeometry, taillightMaterial);
+        leftTaillight.position.set(-1, 0.5, -2.6);
+        
+        const rightTaillight = new THREE.Mesh(headlightGeometry, taillightMaterial);
+        rightTaillight.position.set(1, 0.5, -2.6);
         
         // Create player group
         this.player = new THREE.Group();
         this.player.add(body);
         this.player.add(top);
+        this.player.add(leftHeadlight);
+        this.player.add(rightHeadlight);
+        this.player.add(leftTaillight);
+        this.player.add(rightTaillight);
+        this.player.add(headlightSpot1);
+        this.player.add(headlightSpot2);
+        this.player.add(leftTarget);
+        this.player.add(rightTarget);
+        
         wheels.forEach(wheel => this.player.add(wheel));
+        
+        // Set the spotlight targets to the target objects
+        headlightSpot1.target = leftTarget;
+        headlightSpot2.target = rightTarget;
         
         this.player.position.set(0, 1, 20);
         this.player.userData.wheels = wheels;
+        this.player.userData.headlights = [headlightSpot1, headlightSpot2];
         this.scene.add(this.player);
     }
 
     createObstacle() {
-        const types = ['box', 'cone', 'barrier'];
+        const types = ['box', 'cone', 'barrier', 'car', 'truck'];
         const type = types[Math.floor(Math.random() * types.length)];
         
         let geometry, material, obstacle;
@@ -349,18 +810,106 @@ class GameEngine {
         switch(type) {
             case 'box':
                 geometry = new THREE.BoxGeometry(3, 3, 3);
-                material = new THREE.MeshStandardMaterial({ color: 0xff6600 });
+                material = new THREE.MeshStandardMaterial({ 
+                    color: 0xff6600,
+                    metalness: 0.8,
+                    roughness: 0.2,
+                    emissive: 0x221100,
+                    emissiveIntensity: 0.1
+                });
                 obstacle = new THREE.Mesh(geometry, material);
                 break;
+                
             case 'cone':
                 geometry = new THREE.ConeGeometry(1.5, 4, 8);
-                material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+                material = new THREE.MeshStandardMaterial({ 
+                    color: 0xff3300,
+                    roughness: 0.9,
+                    metalness: 0.1
+                });
                 obstacle = new THREE.Mesh(geometry, material);
+                
+                // Add reflective stripe
+                const stripeGeometry = new THREE.RingGeometry(1.2, 1.5, 8);
+                const stripeMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0xffffff,
+                    emissive: 0xffffff,
+                    emissiveIntensity: 0.2
+                });
+                const stripe = new THREE.Mesh(stripeGeometry, stripeMaterial);
+                stripe.rotation.x = -Math.PI / 2;
+                stripe.position.y = 1.5;
+                obstacle.add(stripe);
                 break;
+                
             case 'barrier':
                 geometry = new THREE.BoxGeometry(8, 2, 1);
-                material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+                material = new THREE.MeshStandardMaterial({ 
+                    color: 0xff0000,
+                    metalness: 0.7,
+                    roughness: 0.3,
+                    emissive: 0x330000,
+                    emissiveIntensity: 0.2
+                });
                 obstacle = new THREE.Mesh(geometry, material);
+                
+                // Add warning lights
+                for (let i = -3; i <= 3; i += 2) {
+                    const lightGeometry = new THREE.SphereGeometry(0.2, 8, 8);
+                    const lightMaterial = new THREE.MeshBasicMaterial({
+                        color: 0xffff00,
+                        emissive: 0xffff00,
+                        emissiveIntensity: 0.8
+                    });
+                    const light = new THREE.Mesh(lightGeometry, lightMaterial);
+                    light.position.set(i, 1.2, 0);
+                    obstacle.add(light);
+                }
+                break;
+                
+            case 'car':
+                // Create a simple car obstacle
+                const carBody = new THREE.BoxGeometry(2.5, 1.2, 4);
+                const carMaterial = new THREE.MeshStandardMaterial({
+                    color: [0x0088ff, 0x00ff88, 0x8800ff, 0xff8800][Math.floor(Math.random() * 4)],
+                    metalness: 0.8,
+                    roughness: 0.2
+                });
+                obstacle = new THREE.Mesh(carBody, carMaterial);
+                
+                // Add wheels to car
+                const carWheelGeometry = new THREE.CylinderGeometry(0.4, 0.4, 0.2, 12);
+                const carWheelMaterial = new THREE.MeshStandardMaterial({ color: 0x222222 });
+                
+                const carWheelPositions = [
+                    [-1.3, -0.6, 1.2], [1.3, -0.6, 1.2],
+                    [-1.3, -0.6, -1.2], [1.3, -0.6, -1.2]
+                ];
+                
+                carWheelPositions.forEach(pos => {
+                    const wheel = new THREE.Mesh(carWheelGeometry, carWheelMaterial);
+                    wheel.rotation.z = Math.PI / 2;
+                    wheel.position.set(...pos);
+                    obstacle.add(wheel);
+                });
+                break;
+                
+            case 'truck':
+                // Create a truck obstacle
+                const truckBody = new THREE.BoxGeometry(3, 2.5, 6);
+                const truckMaterial = new THREE.MeshStandardMaterial({
+                    color: 0x444444,
+                    metalness: 0.6,
+                    roughness: 0.4
+                });
+                obstacle = new THREE.Mesh(truckBody, truckMaterial);
+                
+                // Add truck cab
+                const cabGeometry = new THREE.BoxGeometry(3, 2, 2);
+                const cab = new THREE.Mesh(cabGeometry, truckMaterial);
+                cab.position.z = 2.5;
+                cab.position.y = 0.5;
+                obstacle.add(cab);
                 break;
         }
         
@@ -369,34 +918,379 @@ class GameEngine {
         
         const lanes = [-10, 0, 10];
         const lane = lanes[Math.floor(Math.random() * lanes.length)];
-        obstacle.position.set(lane, type === 'cone' ? 2 : 1.5, -100);
+        
+        let yPos = 1.5;
+        if (type === 'cone') yPos = 2;
+        else if (type === 'car') yPos = 0.6;
+        else if (type === 'truck') yPos = 1.25;
+        
+        obstacle.position.set(lane, yPos, -100);
+        
+        // Add some random rotation for variety
+        if (type !== 'barrier') {
+            obstacle.rotation.y = (Math.random() - 0.5) * 0.2;
+        }
         
         this.scene.add(obstacle);
         this.obstacles.push(obstacle);
     }
 
-    createParticles(position, color) {
-        const particleCount = 20;
+    createPowerUp() {
+        const types = [
+            { name: 'speed', color: 0x00ff00, effect: 'Increases speed for 5 seconds' },
+            { name: 'shield', color: 0x0088ff, effect: 'Temporary invincibility for 3 seconds' },
+            { name: 'score', color: 0xffff00, effect: 'Instant score bonus' },
+            { name: 'slowmo', color: 0xff00ff, effect: 'Slows down time for 4 seconds' },
+            { name: 'magnet', color: 0xff8800, effect: 'Attracts nearby power-ups for 6 seconds' }
+        ];
+        
+        const type = types[Math.floor(Math.random() * types.length)];
+        
+        // Create power-up geometry - rotating crystal shape
+        const geometry = new THREE.OctahedronGeometry(1, 0);
+        const material = new THREE.MeshStandardMaterial({
+            color: type.color,
+            emissive: type.color,
+            emissiveIntensity: 0.3,
+            transparent: true,
+            opacity: 0.8,
+            metalness: 0.8,
+            roughness: 0.1
+        });
+        
+        const powerUp = new THREE.Mesh(geometry, material);
+        
+        // Add glow effect
+        const glowGeometry = new THREE.SphereGeometry(1.5, 16, 16);
+        const glowMaterial = new THREE.MeshBasicMaterial({
+            color: type.color,
+            transparent: true,
+            opacity: 0.2,
+            side: THREE.BackSide
+        });
+        const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+        powerUp.add(glow);
+        
+        // Add floating animation
+        powerUp.userData.originalY = 3;
+        powerUp.userData.bobOffset = Math.random() * Math.PI * 2;
+        powerUp.userData.type = type.name;
+        powerUp.userData.rotationSpeed = (Math.random() + 0.5) * 2;
+        
+        const lanes = [-10, 0, 10];
+        const lane = lanes[Math.floor(Math.random() * lanes.length)];
+        powerUp.position.set(lane, 3, -120);
+        
+        this.scene.add(powerUp);
+        this.powerUps.push(powerUp);
+    }
+
+    collectPowerUp(powerUp) {
+        const type = powerUp.userData.type;
+        const duration = {
+            speed: 5000,
+            shield: 3000,
+            score: 0,
+            slowmo: 4000,
+            magnet: 6000
+        }[type];
+        
+        switch(type) {
+            case 'speed':
+                this.activePowerUps.set('speed', Date.now() + duration);
+                this.showPowerUpNotification('Speed Boost!', 0x00ff00);
+                this.showSubtlePowerUpFeedback('SPEED', 0x00ff00);
+                break;
+                
+            case 'shield':
+                this.activePowerUps.set('shield', Date.now() + duration);
+                this.showPowerUpNotification('Shield Active!', 0x0088ff);
+                this.showSubtlePowerUpFeedback('SHIELD', 0x0088ff);
+                // Add shield visual effect
+                this.createShieldEffect();
+                break;
+                
+            case 'score':
+                this.score += 500;
+                this.showPowerUpNotification('+500 Points!', 0xffff00);
+                this.showSubtlePowerUpFeedback('+500', 0xffff00);
+                break;
+                
+            case 'slowmo':
+                this.activePowerUps.set('slowmo', Date.now() + duration);
+                this.showPowerUpNotification('Slow Motion!', 0xff00ff);
+                this.showSubtlePowerUpFeedback('SLOW-MO', 0xff00ff);
+                break;
+                
+            case 'magnet':
+                this.activePowerUps.set('magnet', Date.now() + duration);
+                this.showPowerUpNotification('Magnet Active!', 0xff8800);
+                this.showSubtlePowerUpFeedback('MAGNET', 0xff8800);
+                break;
+        }
+        
+        // Play collection sound
+        this.sounds.powerUp();
+        
+        // Create collection effect
+        this.createParticles(powerUp.position, powerUp.material.color.getHex(), 'spark');
+        
+        // Remove power-up
+        this.scene.remove(powerUp);
+        const index = this.powerUps.indexOf(powerUp);
+        if (index > -1) {
+            this.powerUps.splice(index, 1);
+        }
+    }
+
+    createShieldEffect() {
+        if (this.player.userData.shield) {
+            this.player.remove(this.player.userData.shield);
+        }
+        
+        const shieldGeometry = new THREE.SphereGeometry(4, 16, 16);
+        const shieldMaterial = new THREE.MeshBasicMaterial({
+            color: 0x0088ff,
+            transparent: true,
+            opacity: 0.3,
+            side: THREE.DoubleSide
+        });
+        
+        const shield = new THREE.Mesh(shieldGeometry, shieldMaterial);
+        shield.userData.animationOffset = 0;
+        this.player.add(shield);
+        this.player.userData.shield = shield;
+    }
+    
+    createShieldHitEffect() {
+        // Create a brief visual feedback for shield hit without popup notification
+        const flashGeometry = new THREE.SphereGeometry(5, 16, 16);
+        const flashMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00bbff,
+            transparent: true,
+            opacity: 0.8,
+            side: THREE.DoubleSide
+        });
+        
+        const flash = new THREE.Mesh(flashGeometry, flashMaterial);
+        flash.position.copy(this.player.position);
+        this.scene.add(flash);
+        
+        // Animate the flash effect
+        const startTime = Date.now();
+        const animate = () => {
+            const elapsed = Date.now() - startTime;
+            const progress = elapsed / 300; // 300ms duration
+            
+            if (progress >= 1) {
+                this.scene.remove(flash);
+                return;
+            }
+            
+            // Fade out and scale up
+            flash.material.opacity = 0.8 * (1 - progress);
+            flash.scale.setScalar(1 + progress * 0.5);
+            
+            requestAnimationFrame(animate);
+        };
+        animate();
+    }
+    
+    showSubtlePowerUpFeedback(text, color) {
+        // Only show during active gameplay as a subtle indicator
+        if (this.gameState !== 'playing') return;
+        
+        const indicator = document.createElement('div');
+        indicator.style.cssText = `
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #${color.toString(16).padStart(6, '0')};
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            z-index: 150;
+            pointer-events: none;
+            transform: translateX(100%);
+            transition: transform 0.3s ease, opacity 0.3s ease;
+            opacity: 0;
+        `;
+        indicator.textContent = text;
+        
+        document.body.appendChild(indicator);
+        
+        // Animate in
+        setTimeout(() => {
+            indicator.style.transform = 'translateX(0)';
+            indicator.style.opacity = '1';
+        }, 10);
+        
+        // Animate out and remove
+        setTimeout(() => {
+            indicator.style.transform = 'translateX(100%)';
+            indicator.style.opacity = '0';
+            setTimeout(() => {
+                if (indicator.parentNode) {
+                    indicator.parentNode.removeChild(indicator);
+                }
+            }, 300);
+        }, 1500);
+    }
+
+    showPowerUpNotification(text, color) {
+        // If we're actively playing, queue the notification for later
+        if (this.gameState === 'playing') {
+            this.notificationQueue.push({ text, color, timestamp: Date.now() });
+            return;
+        }
+        
+        // Show notification immediately if not playing
+        this.displayNotification(text, color);
+    }
+    
+    displayNotification(text, color) {
+        // Don't show if we just showed one recently during gameplay
+        const now = Date.now();
+        if (this.gameState === 'playing' && now - this.lastNotificationTime < 1000) {
+            return;
+        }
+        
+        this.lastNotificationTime = now;
+        
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+            position: fixed;
+            top: 150px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: #${color.toString(16).padStart(6, '0')};
+            padding: 1rem 2rem;
+            border-radius: 10px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            z-index: 200;
+            pointer-events: none;
+            animation: slideDown 0.5s ease-out, fadeOut 0.5s ease-out 2s;
+        `;
+        notification.textContent = text;
+        
+        // Add animation keyframes if not already added
+        if (!document.getElementById('powerup-animations')) {
+            const style = document.createElement('style');
+            style.id = 'powerup-animations';
+            style.textContent = `
+                @keyframes slideDown {
+                    from { transform: translateX(-50%) translateY(-20px); opacity: 0; }
+                    to { transform: translateX(-50%) translateY(0); opacity: 1; }
+                }
+                @keyframes fadeOut {
+                    from { opacity: 1; }
+                    to { opacity: 0; }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        
+        document.body.appendChild(notification);
+        this.currentNotification = notification;
+        
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+            if (this.currentNotification === notification) {
+                this.currentNotification = null;
+            }
+        }, 2500);
+    }
+    
+    processNotificationQueue() {
+        // Process queued notifications when appropriate
+        if (this.notificationQueue.length > 0 && 
+            (this.gameState === 'paused' || this.gameState === 'gameover' || this.gameState === 'menu')) {
+            
+            const notification = this.notificationQueue.shift();
+            this.displayNotification(notification.text, notification.color);
+        }
+    }
+
+    createParticles(position, color, type = 'explosion') {
+        const particleCount = type === 'explosion' ? 30 : 20;
         const particles = new THREE.Group();
         
         for (let i = 0; i < particleCount; i++) {
-            const geometry = new THREE.SphereGeometry(0.2, 8, 8);
-            const material = new THREE.MeshBasicMaterial({ color: color || 0xffffff });
+            let geometry, material;
+            
+            if (type === 'explosion') {
+                geometry = new THREE.SphereGeometry(0.3, 6, 6);
+                material = new THREE.MeshBasicMaterial({ 
+                    color: color || 0xff4400,
+                    transparent: true,
+                    opacity: 0.8
+                });
+            } else if (type === 'spark') {
+                geometry = new THREE.SphereGeometry(0.1, 4, 4);
+                material = new THREE.MeshBasicMaterial({
+                    color: 0xffff00,
+                    emissive: 0xffff00,
+                    emissiveIntensity: 0.5
+                });
+            } else {
+                geometry = new THREE.SphereGeometry(0.2, 8, 8);
+                material = new THREE.MeshBasicMaterial({ 
+                    color: color || 0xffffff,
+                    transparent: true,
+                    opacity: 0.7
+                });
+            }
+            
             const particle = new THREE.Mesh(geometry, material);
             
             particle.position.copy(position);
             particle.userData.velocity = new THREE.Vector3(
-                (Math.random() - 0.5) * 2,
-                Math.random() * 3,
-                (Math.random() - 0.5) * 2
+                (Math.random() - 0.5) * 4,
+                Math.random() * 5 + 2,
+                (Math.random() - 0.5) * 4
             );
             particle.userData.life = 1.0;
+            particle.userData.initialScale = particle.scale.x;
             
             particles.add(particle);
         }
         
         this.scene.add(particles);
         this.particles.push(particles);
+        
+        // Add screen shake effect for explosions
+        if (type === 'explosion') {
+            this.addScreenShake(0.5, 0.2);
+        }
+    }
+    
+    addScreenShake(intensity, duration) {
+        const originalPosition = this.camera.position.clone();
+        const startTime = Date.now();
+        
+        const shake = () => {
+            const elapsed = Date.now() - startTime;
+            if (elapsed < duration * 1000) {
+                const progress = elapsed / (duration * 1000);
+                const currentIntensity = intensity * (1 - progress);
+                
+                this.camera.position.x = originalPosition.x + (Math.random() - 0.5) * currentIntensity;
+                this.camera.position.y = originalPosition.y + (Math.random() - 0.5) * currentIntensity;
+                this.camera.position.z = originalPosition.z + (Math.random() - 0.5) * currentIntensity;
+                
+                requestAnimationFrame(shake);
+            } else {
+                this.camera.position.copy(originalPosition);
+            }
+        };
+        
+        shake();
     }
 
     setupInput() {
@@ -415,22 +1309,66 @@ class GameEngine {
             this.keys[e.key] = false;
         });
 
-        // Touch
+        // Enhanced touch controls
         const canvas = document.getElementById('game-canvas');
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let swipeThreshold = 50;
+        
         canvas.addEventListener('touchstart', (e) => {
-            this.touchStartX = e.touches[0].clientX;
-        });
+            e.preventDefault();
+            const touch = e.touches[0];
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+            
+            // Visual feedback for touch
+            this.createTouchFeedback(touch.clientX, touch.clientY);
+        }, { passive: false });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+        }, { passive: false });
 
         canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
             if (!e.changedTouches[0]) return;
-            const touchEndX = e.changedTouches[0].clientX;
-            const diff = touchEndX - this.touchStartX;
+            
+            const touch = e.changedTouches[0];
+            const touchEndX = touch.clientX;
+            const touchEndY = touch.clientY;
+            const diffX = touchEndX - touchStartX;
+            const diffY = touchEndY - touchStartY;
             
             if (this.gameState === 'playing') {
-                if (diff > 50) this.moveRight();
-                if (diff < -50) this.moveLeft();
+                // Horizontal swipes for lane changes
+                if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > swipeThreshold) {
+                    if (diffX > 0) {
+                        this.moveRight();
+                    } else {
+                        this.moveLeft();
+                    }
+                }
+                // Vertical swipes for actions (future: jump, brake)
+                else if (Math.abs(diffY) > swipeThreshold) {
+                    if (diffY < 0) {
+                        // Swipe up - could be jump in future
+                        console.log('Swipe up detected');
+                    } else {
+                        // Swipe down - could be brake in future
+                        console.log('Swipe down detected');
+                    }
+                }
+                // Tap for pause
+                else if (Math.abs(diffX) < 20 && Math.abs(diffY) < 20) {
+                    // Quick tap in center area pauses
+                    const centerX = window.innerWidth / 2;
+                    const centerY = window.innerHeight / 2;
+                    if (Math.abs(touchEndX - centerX) < 100 && Math.abs(touchEndY - centerY) < 100) {
+                        this.pauseGame();
+                    }
+                }
             }
-        });
+        }, { passive: false });
 
         // Mouse click for lane change
         canvas.addEventListener('click', (e) => {
@@ -454,14 +1392,14 @@ class GameEngine {
     moveLeft() {
         if (this.playerLane > -1) {
             this.playerLane--;
-            this.sounds.pickup();
+            this.sounds.whoosh();
         }
     }
 
     moveRight() {
         if (this.playerLane < 1) {
             this.playerLane++;
-            this.sounds.pickup();
+            this.sounds.whoosh();
         }
     }
 
@@ -522,6 +1460,37 @@ class GameEngine {
         await new Promise(resolve => setTimeout(resolve, 500));
     }
 
+    showError(message) {
+        const errorDiv = document.createElement('div');
+        errorDiv.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 0, 0, 0.9);
+            color: white;
+            padding: 2rem;
+            border-radius: 10px;
+            z-index: 9999;
+            text-align: center;
+            font-family: Arial, sans-serif;
+        `;
+        errorDiv.innerHTML = `
+            <h2>Error</h2>
+            <p>${message}</p>
+            <button onclick="location.reload()" style="
+                margin-top: 1rem;
+                padding: 0.5rem 1rem;
+                background: white;
+                color: red;
+                border: none;
+                border-radius: 5px;
+                cursor: pointer;
+            ">Reload Game</button>
+        `;
+        document.body.appendChild(errorDiv);
+    }
+
     hideLoading() {
         document.getElementById('loading-screen').classList.add('hidden');
     }
@@ -530,6 +1499,9 @@ class GameEngine {
         this.gameState = 'menu';
         document.getElementById('main-menu').classList.remove('hidden');
         this.updateUI();
+        
+        // Clear notification queue when returning to menu
+        this.notificationQueue = [];
     }
 
     hideMainMenu() {
@@ -546,12 +1518,18 @@ class GameEngine {
         this.obstacleSpawnTimer = 0;
         this.playerLane = 0;
         
-        // Clear obstacles
+        // Clear obstacles and power-ups
         this.obstacles.forEach(obs => this.scene.remove(obs));
         this.obstacles = [];
+        this.powerUps.forEach(powerUp => this.scene.remove(powerUp));
+        this.powerUps = [];
+        this.activePowerUps.clear();
         
         // Reset player position
         this.player.position.set(0, 1, 20);
+        
+        // Initialize weather system
+        this.createWeatherSystem();
         
         // Show HUD
         this.hideMainMenu();
@@ -564,9 +1542,9 @@ class GameEngine {
             document.getElementById('hud-timer-container').style.display = 'none';
         }
         
-        // Start audio
-        this.startEngineSound();
-        if (this.musicLoop && this.audioContext) {
+        // Start audio (engine sound disabled - was obnoxious)
+        // this.startEngineSound();
+        if (this.musicLoop && this.audioContext && this.audioContext.state !== 'suspended') {
             this.musicLoop();
         }
     }
@@ -577,18 +1555,25 @@ class GameEngine {
         this.gameState = 'paused';
         document.getElementById('pause-menu').classList.remove('hidden');
         this.stopEngineSound();
+        
+        // Process any queued notifications now that we're paused
+        this.processNotificationQueue();
     }
 
     resumeGame() {
         this.gameState = 'playing';
         document.getElementById('pause-menu').classList.add('hidden');
-        this.startEngineSound();
+        // Engine sound disabled - was obnoxious
+        // this.startEngineSound();
     }
 
     gameOver() {
         this.gameState = 'gameover';
         document.getElementById('game-hud').classList.add('hidden');
         this.stopEngineSound();
+        
+        // Process any queued notifications now that game is over
+        this.processNotificationQueue();
         
         // Calculate XP earned
         const baseXP = Math.floor(this.score / 10);
@@ -626,7 +1611,8 @@ class GameEngine {
         document.getElementById('pause-menu').classList.add('hidden');
         document.getElementById('game-over-screen').classList.add('hidden');
         this.showMainMenu();
-        this.stopEngineSound();
+        // Engine sound disabled - was obnoxious
+        // this.stopEngineSound();
     }
 
     updateGame(delta) {
@@ -635,9 +1621,19 @@ class GameEngine {
         // Update time
         this.timeElapsed += delta;
         
-        // Update speed based on mode and skills
+        // Update speed based on mode, skills, and power-ups
         const speedBoost = 1 + (playerProgress.skills.speed * 0.1);
-        this.speed = Math.min(this.baseSpeed * (1 + this.timeElapsed / 60) * speedBoost, this.maxSpeed);
+        let powerUpSpeedMultiplier = 1;
+        
+        if (this.activePowerUps.has('speed') && this.activePowerUps.get('speed') > Date.now()) {
+            powerUpSpeedMultiplier = 1.5;
+        }
+        
+        if (this.activePowerUps.has('slowmo') && this.activePowerUps.get('slowmo') > Date.now()) {
+            powerUpSpeedMultiplier = 0.5;
+        }
+        
+        this.speed = Math.min(this.baseSpeed * (1 + this.timeElapsed / 60) * speedBoost * powerUpSpeedMultiplier, this.maxSpeed);
         
         // Update player lane position
         const targetX = this.playerLane * 10;
@@ -659,12 +1655,17 @@ class GameEngine {
             }
         });
         
-        // Spawn obstacles
+        // Spawn obstacles and power-ups
         this.obstacleSpawnTimer += delta;
         const spawnRate = Math.max(1.5 - (this.timeElapsed / 120), 0.5);
         
         if (this.obstacleSpawnTimer > spawnRate) {
-            this.createObstacle();
+            // 20% chance to spawn power-up instead of obstacle
+            if (Math.random() < 0.2) {
+                this.createPowerUp();
+            } else {
+                this.createObstacle();
+            }
             this.obstacleSpawnTimer = 0;
         }
         
@@ -681,15 +1682,94 @@ class GameEngine {
                 continue;
             }
             
-            // Collision detection
+            // Collision detection (check for shield power-up)
+            const hasShield = this.activePowerUps.has('shield') && this.activePowerUps.get('shield') > Date.now();
             const distX = Math.abs(this.player.position.x - obstacle.position.x);
             const distZ = Math.abs(this.player.position.z - obstacle.position.z);
             
             if (distX < 3 && distZ < 4) {
-                this.createParticles(obstacle.position, 0xff0000);
-                this.gameOver();
-                return;
+                if (hasShield) {
+                    // Shield absorbs hit
+                    this.createParticles(obstacle.position, 0x0088ff, 'spark');
+                    this.activePowerUps.delete('shield');
+                    if (this.player.userData.shield) {
+                        this.player.remove(this.player.userData.shield);
+                        this.player.userData.shield = null;
+                    }
+                    // Queue notification instead of showing immediately during gameplay
+                    this.showPowerUpNotification('Shield Absorbed Hit!', 0x0088ff);
+                    // Add subtle visual feedback for shield hit
+                    this.createShieldHitEffect();
+                    this.showSubtlePowerUpFeedback('SAVED!', 0x0088ff);
+                    this.scene.remove(obstacle);
+                    this.obstacles.splice(i, 1);
+                } else {
+                    this.createParticles(obstacle.position, 0xff3300, 'explosion');
+                    this.createParticles(this.player.position, 0xffff00, 'spark');
+                    this.gameOver();
+                    return;
+                }
             }
+        }
+        
+        // Update power-ups
+        for (let i = this.powerUps.length - 1; i >= 0; i--) {
+            const powerUp = this.powerUps[i];
+            powerUp.position.z += this.speed * delta;
+            
+            // Animate power-up
+            powerUp.rotation.x += delta * powerUp.userData.rotationSpeed;
+            powerUp.rotation.y += delta * powerUp.userData.rotationSpeed * 0.7;
+            powerUp.position.y = powerUp.userData.originalY + Math.sin(Date.now() * 0.005 + powerUp.userData.bobOffset) * 0.5;
+            
+            // Remove if passed
+            if (powerUp.position.z > 30) {
+                this.scene.remove(powerUp);
+                this.powerUps.splice(i, 1);
+                continue;
+            }
+            
+            // Magnet effect
+            if (this.activePowerUps.has('magnet') && this.activePowerUps.get('magnet') > Date.now()) {
+                const magnetForce = 0.2;
+                const diffX = this.player.position.x - powerUp.position.x;
+                const diffZ = this.player.position.z - powerUp.position.z;
+                const distance = Math.sqrt(diffX * diffX + diffZ * diffZ);
+                
+                if (distance < 20 && distance > 1) {
+                    const forceX = (diffX / distance) * magnetForce;
+                    const forceZ = (diffZ / distance) * magnetForce;
+                    powerUp.position.x += forceX;
+                    powerUp.position.z += forceZ;
+                }
+            }
+            
+            // Collision detection with power-ups
+            const distX = Math.abs(this.player.position.x - powerUp.position.x);
+            const distZ = Math.abs(this.player.position.z - powerUp.position.z);
+            
+            if (distX < 2 && distZ < 3) {
+                this.collectPowerUp(powerUp);
+            }
+        }
+        
+        // Update active power-ups
+        const now = Date.now();
+        for (const [type, endTime] of this.activePowerUps.entries()) {
+            if (endTime <= now) {
+                this.activePowerUps.delete(type);
+                if (type === 'shield' && this.player.userData.shield) {
+                    this.player.remove(this.player.userData.shield);
+                    this.player.userData.shield = null;
+                }
+            }
+        }
+        
+        // Update shield effect
+        if (this.player.userData.shield) {
+            this.player.userData.shield.userData.animationOffset += delta * 3;
+            this.player.userData.shield.material.opacity = 0.3 + Math.sin(this.player.userData.shield.userData.animationOffset) * 0.1;
+            this.player.userData.shield.rotation.y += delta * 2;
         }
         
         // Update particles
@@ -698,11 +1778,21 @@ class GameEngine {
             let allDead = true;
             
             particleGroup.children.forEach(particle => {
-                particle.userData.life -= delta * 0.5;
+                particle.userData.life -= delta * 0.8;
                 if (particle.userData.life > 0) {
+                    // Update position
                     particle.position.add(particle.userData.velocity.clone().multiplyScalar(delta));
-                    particle.userData.velocity.y -= 9.8 * delta;
+                    particle.userData.velocity.y -= 9.8 * delta; // Gravity
+                    particle.userData.velocity.multiplyScalar(0.98); // Air resistance
+                    
+                    // Update visual properties
                     particle.material.opacity = particle.userData.life;
+                    particle.scale.setScalar(particle.userData.initialScale * particle.userData.life);
+                    
+                    // Add some rotation for visual interest
+                    particle.rotation.x += delta * 2;
+                    particle.rotation.y += delta * 3;
+                    
                     allDead = false;
                 } else {
                     particle.visible = false;
@@ -719,8 +1809,14 @@ class GameEngine {
         this.distance += this.speed * delta;
         this.score += Math.floor(this.speed * delta * 0.1);
         
-        // Update engine sound
-        this.updateEngineSound();
+        // Update engine sound (disabled)
+        // this.updateEngineSound();
+        
+        // Update weather
+        this.updateWeather(delta);
+        
+        // Update speed lines effect
+        this.updateSpeedLines();
         
         // Update HUD
         this.updateHUD();
@@ -738,25 +1834,363 @@ class GameEngine {
     }
 
     updateHUD() {
-        document.getElementById('hud-score').textContent = Math.floor(this.score);
-        document.getElementById('hud-speed').textContent = Math.floor(this.speed);
-        document.getElementById('hud-distance').textContent = Math.floor(this.distance);
+        // Track previous values for animations
+        if (!this.hudPrevValues) {
+            this.hudPrevValues = {};
+        }
+        
+        const score = Math.floor(this.score);
+        const speed = Math.floor(this.speed);
+        const distance = Math.floor(this.distance);
+        
+        const scoreElement = document.getElementById('hud-score');
+        const speedElement = document.getElementById('hud-speed');
+        const distanceElement = document.getElementById('hud-distance');
+        
+        // Animate changes
+        if (this.hudPrevValues.score !== score) {
+            this.animateValueChange(scoreElement, score);
+            this.hudPrevValues.score = score;
+        }
+        
+        if (this.hudPrevValues.speed !== speed) {
+            this.animateValueChange(speedElement, speed);
+            this.hudPrevValues.speed = speed;
+        }
+        
+        if (this.hudPrevValues.distance !== distance) {
+            this.animateValueChange(distanceElement, distance);
+            this.hudPrevValues.distance = distance;
+        }
         
         const minutes = Math.floor(this.timeElapsed / 60);
         const seconds = Math.floor(this.timeElapsed % 60);
         document.getElementById('hud-timer').textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        
+        // Update power-up indicators
+        this.updatePowerUpHUD();
+    }
+
+    animateValueChange(element, newValue) {
+        element.textContent = newValue;
+        element.classList.add('changing');
+        setTimeout(() => {
+            element.classList.remove('changing');
+        }, 400);
+    }
+
+    updatePowerUpHUD() {
+        const powerUpContainer = document.getElementById('hud-powerups');
+        powerUpContainer.innerHTML = '';
+        
+        const now = Date.now();
+        
+        for (const [type, endTime] of this.activePowerUps.entries()) {
+            if (endTime > now) {
+                const remaining = Math.ceil((endTime - now) / 1000);
+                
+                const indicator = document.createElement('div');
+                indicator.className = `powerup-indicator ${type}`;
+                
+                const icon = document.createElement('div');
+                icon.className = `powerup-icon ${type}`;
+                
+                const text = document.createElement('div');
+                text.className = 'powerup-text';
+                text.textContent = {
+                    speed: 'Speed',
+                    shield: 'Shield',
+                    slowmo: 'Slow-Mo',
+                    magnet: 'Magnet'
+                }[type];
+                
+                const timer = document.createElement('div');
+                timer.className = 'powerup-timer';
+                timer.textContent = `${remaining}s`;
+                
+                indicator.appendChild(icon);
+                indicator.appendChild(text);
+                indicator.appendChild(timer);
+                
+                powerUpContainer.appendChild(indicator);
+            }
+        }
+    }
+
+    createWeatherSystem() {
+        const weathers = ['clear', 'rain', 'snow', 'fog'];
+        this.currentWeather = weathers[Math.floor(Math.random() * weathers.length)];
+        
+        // Remove existing weather
+        if (this.weatherSystem) {
+            this.scene.remove(this.weatherSystem);
+        }
+        
+        switch(this.currentWeather) {
+            case 'rain':
+                this.createRain();
+                break;
+            case 'snow':
+                this.createSnow();
+                break;
+            case 'fog':
+                this.createFog();
+                break;
+            default:
+                // Clear weather - no special effects
+                break;
+        }
+        
+        console.log(`Weather changed to: ${this.currentWeather}`);
+    }
+
+    createRain() {
+        // Reduce particle count on mobile
+        const rainCount = this.isMobile ? 500 : 1000;
+        const rainGeometry = new THREE.BufferGeometry();
+        const rainPositions = [];
+        const rainVelocities = [];
+        
+        for (let i = 0; i < rainCount; i++) {
+            rainPositions.push(
+                (Math.random() - 0.5) * 200,  // x
+                Math.random() * 100 + 50,     // y
+                (Math.random() - 0.5) * 200   // z
+            );
+            rainVelocities.push(0, -80, -10); // Falling velocity
+        }
+        
+        rainGeometry.setAttribute('position', new THREE.Float32BufferAttribute(rainPositions, 3));
+        rainGeometry.setAttribute('velocity', new THREE.Float32BufferAttribute(rainVelocities, 3));
+        
+        const rainMaterial = new THREE.PointsMaterial({
+            color: 0x8888ff,
+            size: 2,
+            transparent: true,
+            opacity: 0.6
+        });
+        
+        this.weatherSystem = new THREE.Points(rainGeometry, rainMaterial);
+        this.weatherSystem.userData.type = 'rain';
+        this.scene.add(this.weatherSystem);
+        
+        // Adjust scene fog and lighting for rain
+        this.scene.fog.density = 0.01;
+        this.scene.background = new THREE.Color(0x0a0a15);
+    }
+
+    createSnow() {
+        // Reduce particle count on mobile
+        const snowCount = this.isMobile ? 250 : 500;
+        const snowGeometry = new THREE.BufferGeometry();
+        const snowPositions = [];
+        
+        for (let i = 0; i < snowCount; i++) {
+            snowPositions.push(
+                (Math.random() - 0.5) * 200,  // x
+                Math.random() * 100 + 50,     // y
+                (Math.random() - 0.5) * 200   // z
+            );
+        }
+        
+        snowGeometry.setAttribute('position', new THREE.Float32BufferAttribute(snowPositions, 3));
+        
+        const snowMaterial = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 4,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        this.weatherSystem = new THREE.Points(snowGeometry, snowMaterial);
+        this.weatherSystem.userData.type = 'snow';
+        this.scene.add(this.weatherSystem);
+        
+        // Adjust scene for snow
+        this.scene.background = new THREE.Color(0x0f0f1f);
+    }
+
+    createFog() {
+        // Heavy fog effect
+        this.scene.fog = new THREE.FogExp2(0x0a0a1a, 0.05);
+        this.scene.background = new THREE.Color(0x080808);
+        
+        // Create volumetric fog effect with particles (reduce on mobile)
+        const fogCount = this.isMobile ? 100 : 200;
+        const fogGeometry = new THREE.BufferGeometry();
+        const fogPositions = [];
+        
+        for (let i = 0; i < fogCount; i++) {
+            fogPositions.push(
+                (Math.random() - 0.5) * 100,  // x
+                Math.random() * 30,           // y
+                (Math.random() - 0.5) * 200   // z
+            );
+        }
+        
+        fogGeometry.setAttribute('position', new THREE.Float32BufferAttribute(fogPositions, 3));
+        
+        const fogMaterial = new THREE.PointsMaterial({
+            color: 0x444444,
+            size: 15,
+            transparent: true,
+            opacity: 0.2,
+            blending: THREE.AdditiveBlending
+        });
+        
+        this.weatherSystem = new THREE.Points(fogGeometry, fogMaterial);
+        this.weatherSystem.userData.type = 'fog';
+        this.scene.add(this.weatherSystem);
+    }
+
+    updateWeather(delta) {
+        if (!this.weatherSystem) return;
+        
+        const positions = this.weatherSystem.geometry.attributes.position.array;
+        
+        if (this.weatherSystem.userData.type === 'rain') {
+            for (let i = 0; i < positions.length; i += 3) {
+                positions[i + 1] -= 80 * delta; // Fall down
+                positions[i + 2] += this.speed * delta; // Move with world
+                
+                // Reset raindrops when they fall too low or move too far
+                if (positions[i + 1] < 0 || positions[i + 2] > 50) {
+                    positions[i] = (Math.random() - 0.5) * 200;
+                    positions[i + 1] = Math.random() * 100 + 50;
+                    positions[i + 2] = -150;
+                }
+            }
+        } else if (this.weatherSystem.userData.type === 'snow') {
+            for (let i = 0; i < positions.length; i += 3) {
+                positions[i] += Math.sin(Date.now() * 0.001 + i) * 0.5; // Sway
+                positions[i + 1] -= 20 * delta; // Fall down slowly
+                positions[i + 2] += this.speed * delta; // Move with world
+                
+                if (positions[i + 1] < 0 || positions[i + 2] > 50) {
+                    positions[i] = (Math.random() - 0.5) * 200;
+                    positions[i + 1] = Math.random() * 100 + 50;
+                    positions[i + 2] = -150;
+                }
+            }
+        } else if (this.weatherSystem.userData.type === 'fog') {
+            for (let i = 0; i < positions.length; i += 3) {
+                positions[i] += Math.sin(Date.now() * 0.0005 + i) * 0.2; // Drift
+                positions[i + 2] += this.speed * delta * 0.5; // Move with world
+                
+                if (positions[i + 2] > 50) {
+                    positions[i] = (Math.random() - 0.5) * 100;
+                    positions[i + 1] = Math.random() * 30;
+                    positions[i + 2] = -150;
+                }
+            }
+        }
+        
+        this.weatherSystem.geometry.attributes.position.needsUpdate = true;
+    }
+
+    createSpeedLines() {
+        this.speedLinesContainer = document.createElement('div');
+        this.speedLinesContainer.className = 'speed-lines';
+        
+        // Create multiple speed lines
+        for (let i = 0; i < 20; i++) {
+            const line = document.createElement('div');
+            line.className = 'speed-line';
+            line.style.left = Math.random() * 100 + '%';
+            line.style.animationDelay = Math.random() * 0.5 + 's';
+            line.style.animationDuration = (0.3 + Math.random() * 0.4) + 's';
+            this.speedLinesContainer.appendChild(line);
+        }
+        
+        document.body.appendChild(this.speedLinesContainer);
+    }
+
+    updateSpeedLines() {
+        if (!this.speedLinesContainer) return;
+        
+        const speedRatio = this.speed / this.maxSpeed;
+        
+        if (speedRatio > 0.7) {
+            this.speedLinesContainer.classList.add('active');
+        } else {
+            this.speedLinesContainer.classList.remove('active');
+        }
+    }
+
+    createTouchFeedback(x, y) {
+        const feedback = document.createElement('div');
+        feedback.style.cssText = `
+            position: fixed;
+            left: ${x - 25}px;
+            top: ${y - 25}px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(0, 212, 255, 0.6) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 1000;
+            animation: touchRipple 0.6s ease-out forwards;
+        `;
+        
+        // Add animation keyframes if not already added
+        if (!document.getElementById('touch-animations')) {
+            const style = document.createElement('style');
+            style.id = 'touch-animations';
+            style.textContent = `
+                @keyframes touchRipple {
+                    0% {
+                        transform: scale(0);
+                        opacity: 1;
+                    }
+                    100% {
+                        transform: scale(2);
+                        opacity: 0;
+                    }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        
+        document.body.appendChild(feedback);
+        
+        setTimeout(() => {
+            if (feedback.parentNode) {
+                feedback.parentNode.removeChild(feedback);
+            }
+        }, 600);
     }
 
     updateUI() {
-        // Update player stats in menu
-        document.getElementById('player-level').textContent = playerProgress.level;
-        document.getElementById('player-xp').textContent = playerProgress.xp;
-        document.getElementById('player-xp-needed').textContent = playerProgress.getXPForNextLevel();
-        document.getElementById('skill-points').textContent = playerProgress.skillPoints;
+        // Update player stats in menu with animations
+        const levelElement = document.getElementById('player-level');
+        const xpElement = document.getElementById('player-xp');
+        const xpNeededElement = document.getElementById('player-xp-needed');
+        const skillPointsElement = document.getElementById('skill-points');
         
-        // Update XP bar
+        if (levelElement.textContent != playerProgress.level) {
+            this.animateValueChange(levelElement, playerProgress.level);
+        } else {
+            levelElement.textContent = playerProgress.level;
+        }
+        
+        if (xpElement.textContent != playerProgress.xp) {
+            this.animateValueChange(xpElement, playerProgress.xp);
+        } else {
+            xpElement.textContent = playerProgress.xp;
+        }
+        
+        xpNeededElement.textContent = playerProgress.getXPForNextLevel();
+        
+        if (skillPointsElement.textContent != playerProgress.skillPoints) {
+            this.animateValueChange(skillPointsElement, playerProgress.skillPoints);
+        } else {
+            skillPointsElement.textContent = playerProgress.skillPoints;
+        }
+        
+        // Update XP bar with smooth animation
         const xpProgress = (playerProgress.xp / playerProgress.getXPForNextLevel()) * 100;
-        document.getElementById('xp-progress').style.width = xpProgress + '%';
+        const xpBar = document.getElementById('xp-progress');
+        xpBar.style.width = xpProgress + '%';
         
         // Update mode unlocks
         const timeAttackBtn = document.getElementById('btn-time-attack');
@@ -776,16 +2210,43 @@ class GameEngine {
     animate() {
         requestAnimationFrame(() => this.animate());
         
-        const delta = 1 / 60; // Fixed timestep for consistency
-        
-        this.updateGame(delta);
-        
-        // Sync remote players in multiplayer
-        if (this.connections.length > 0 && this.gameState === 'playing') {
-            this.broadcastPlayerPosition();
+        try {
+            const now = performance.now();
+            
+            // Performance monitoring
+            this.performanceMonitor.frameCount++;
+            if (now - this.performanceMonitor.lastTime >= 1000) {
+                this.performanceMonitor.fps = this.performanceMonitor.frameCount;
+                this.performanceMonitor.frameCount = 0;
+                this.performanceMonitor.lastTime = now;
+                
+                // Adaptive quality adjustment
+                if (this.performanceMonitor.adaptiveQuality && this.isMobile) {
+                    if (this.performanceMonitor.fps < 30) {
+                        this.reducedQuality = true;
+                    } else if (this.performanceMonitor.fps > 50) {
+                        this.reducedQuality = false;
+                    }
+                }
+            }
+            
+            const delta = 1 / 60; // Fixed timestep for consistency
+            
+            this.updateGame(delta);
+            
+            // Sync remote players in multiplayer
+            if (this.connections.length > 0 && this.gameState === 'playing') {
+                this.broadcastPlayerPosition();
+            }
+            
+            // Only render if renderer and scene are properly initialized
+            if (this.renderer && this.scene && this.camera) {
+                this.renderer.render(this.scene, this.camera);
+            }
+        } catch (error) {
+            console.error('Animation loop error:', error);
+            // Continue running but log the error
         }
-        
-        this.renderer.render(this.scene, this.camera);
     }
 
     // WebRTC Multiplayer Methods
@@ -807,16 +2268,24 @@ class GameEngine {
             return;
         }
         
+        // Check if SimplePeer is available
+        if (typeof SimplePeer === 'undefined') {
+            alert('Multiplayer not available - SimplePeer library not loaded');
+            return;
+        }
+        
         this.roomId = roomId;
         document.getElementById('mp-status').textContent = 'Connecting...';
         
-        // Simplified WebRTC connection
         try {
             this.peer = new SimplePeer({ initiator: true, trickle: false });
             
             this.peer.on('signal', data => {
                 // In production, send this to signaling server
                 console.log('Signal data:', data);
+                // For now, show the signal data to be shared manually
+                const signalStr = JSON.stringify(data);
+                prompt('Copy this signal and send to the other player:', signalStr);
             });
             
             this.peer.on('connect', () => {
@@ -825,17 +2294,22 @@ class GameEngine {
             });
             
             this.peer.on('data', data => {
-                this.handleMultiplayerData(JSON.parse(data));
+                try {
+                    this.handleMultiplayerData(JSON.parse(data));
+                } catch (e) {
+                    console.error('Invalid multiplayer data:', e);
+                }
             });
             
             this.peer.on('error', err => {
                 console.error('Peer error:', err);
-                document.getElementById('mp-status').textContent = 'Connection failed';
+                document.getElementById('mp-status').textContent = 'Connection failed: ' + err.message;
             });
             
         } catch (error) {
             console.error('Multiplayer error:', error);
-            alert('Multiplayer connection failed. SimplePeer library may not be available.');
+            document.getElementById('mp-status').textContent = 'Failed to initialize multiplayer';
+            alert('Multiplayer connection failed: ' + error.message);
         }
     }
 
