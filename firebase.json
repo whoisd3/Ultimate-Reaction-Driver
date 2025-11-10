@@ -10,7 +10,8 @@
       "**/.vscode/**",
       "**/README.md",
       "**/FEATURES.md",
-      "**/package*.json"
+      "**/package*.json",
+      "**/.firebaserc"
     ],
     "rewrites": [
       {

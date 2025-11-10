@@ -1518,14 +1518,6 @@ class GameEngine {
         this.obstacleSpawnTimer = 0;
         this.playerLane = 0;
         
-        // Track game start with Firebase Analytics
-        if (window.firebaseAnalytics && window.logAnalyticsEvent) {
-            window.logAnalyticsEvent(window.firebaseAnalytics, 'game_start', {
-                game_mode: mode,
-                player_level: playerProgress.level
-            });
-        }
-        
         // Clear obstacles and power-ups
         this.obstacles.forEach(obs => this.scene.remove(obs));
         this.obstacles = [];
@@ -1593,18 +1585,6 @@ class GameEngine {
         
         // Update leaderboard
         playerProgress.addScore(this.currentMode, this.score);
-        
-        // Track game end event with Firebase Analytics
-        if (window.firebaseAnalytics && window.logAnalyticsEvent) {
-            window.logAnalyticsEvent(window.firebaseAnalytics, 'game_end', {
-                game_mode: this.currentMode,
-                score: this.score,
-                distance: Math.floor(this.distance),
-                time_played: Math.floor(this.timeElapsed),
-                xp_earned: xpEarned,
-                level_up: leveledUp
-            });
-        }
         
         // Save progress
         playerProgress.save();
