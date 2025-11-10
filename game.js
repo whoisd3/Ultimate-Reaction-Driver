@@ -154,14 +154,21 @@ class GameEngine {
                 this.renderer.shadowMap.enabled = false;
                 this.renderer.outputEncoding = THREE.LinearEncoding; // Faster than sRGB
                 this.renderer.toneMapping = THREE.LinearToneMapping;  // Fastest tone mapping
-                this.renderer.toneMappingExposure = 1.0;
+                this.renderer.toneMappingExposure = 1.2; // Increased for brightness
                 
-                // Force lower quality settings
+                // Force lower quality settings for performance
                 this.renderer.capabilities.precision = 'lowp';
                 this.renderer.capabilities.logarithmicDepthBuffer = false;
                 
                 // Disable expensive features
                 this.renderer.xr.enabled = false;
+                
+                // Additional mobile optimizations
+                this.renderer.sortObjects = false; // Skip expensive sorting
+                this.renderer.autoClear = true;    // Ensure clean frames
+                this.renderer.autoClearColor = true;
+                this.renderer.autoClearDepth = true;
+                this.renderer.autoClearStencil = false; // Skip stencil clear
             } else {
                 this.renderer.shadowMap.enabled = true;
                 this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -197,11 +204,17 @@ class GameEngine {
 
     setupScene() {
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x0a0a1a);
+        
+        // Brighter background for mobile
+        if (this.isMobile) {
+            this.scene.background = new THREE.Color(0x0f0f2a); // Brighter than 0x0a0a1a
+        } else {
+            this.scene.background = new THREE.Color(0x0a0a1a);
+        }
         
         // Adjust fog based on device
         if (this.isMobile) {
-            this.scene.fog = new THREE.Fog(0x0a0a1a, 30, 200); // Closer fog for mobile
+            this.scene.fog = new THREE.Fog(0x0f0f2a, 30, 200); // Match brighter background
         } else {
             this.scene.fog = new THREE.Fog(0x0a0a1a, 50, 300);
         }
@@ -213,7 +226,7 @@ class GameEngine {
         // Create a simple skybox effect
         const skyGeometry = new THREE.SphereGeometry(400, this.isMobile ? 8 : 32, this.isMobile ? 8 : 32);
         const skyMaterial = new THREE.MeshBasicMaterial({
-            color: 0x001122,
+            color: this.isMobile ? 0x002244 : 0x001122, // Brighter sky for mobile
             side: THREE.BackSide,
             fog: false
         });
@@ -239,7 +252,10 @@ class GameEngine {
             
             starPositions.push(x, y, z);
             
-            const intensity = Math.random() * 0.8 + 0.2;
+            // Brighter stars for mobile
+            const intensity = this.isMobile ? 
+                Math.random() * 0.9 + 0.4 : // 0.4-1.3 range for mobile
+                Math.random() * 0.8 + 0.2;   // 0.2-1.0 range for desktop
             starColors.push(intensity, intensity, intensity);
         }
         
@@ -247,7 +263,7 @@ class GameEngine {
         starGeometry.setAttribute('color', new THREE.Float32BufferAttribute(starColors, 3));
         
         const starMaterial = new THREE.PointsMaterial({
-            size: this.isMobile ? 1 : 2,
+            size: this.isMobile ? 2 : 2, // Larger stars for mobile visibility
             vertexColors: true,
             fog: false
         });
@@ -268,23 +284,28 @@ class GameEngine {
     }
 
     setupLights() {
-        // Mobile gets simplified lighting for performance
+        // Mobile gets optimized but brighter lighting
         if (this.isMobile) {
-            // Simple directional light only
-            const directionalLight = new THREE.DirectionalLight(0x8888ff, 0.8);
+            // Brighter directional light for mobile
+            const directionalLight = new THREE.DirectionalLight(0xaaaaff, 1.2); // Increased intensity
             directionalLight.position.set(50, 100, 50);
             this.scene.add(directionalLight);
 
-            // Stronger ambient light to compensate
-            const ambientLight = new THREE.AmbientLight(0x404060, 0.6);
+            // Much stronger ambient light to brighten the scene
+            const ambientLight = new THREE.AmbientLight(0x606080, 0.8); // Increased from 0.6
             this.scene.add(ambientLight);
 
-            // Minimal atmospheric lighting - just 1 light
-            const pointLight = new THREE.PointLight(0x00d4ff, 1.5, 60);
+            // Brighter atmospheric lighting for mobile
+            const pointLight = new THREE.PointLight(0x00d4ff, 2.5, 80); // Increased intensity and range
             pointLight.position.set(0, 20, 0);
             this.scene.add(pointLight);
             
-            console.log('Mobile optimized lighting system initialized');
+            // Add a second light for better illumination
+            const pointLight2 = new THREE.PointLight(0xff4488, 1.8, 60);
+            pointLight2.position.set(20, 15, -20);
+            this.scene.add(pointLight2);
+            
+            console.log('Mobile optimized + brightened lighting system initialized');
             return;
         }
         
@@ -626,8 +647,12 @@ class GameEngine {
         canvas.height = this.isMobile ? 256 : 512;
         const ctx = canvas.getContext('2d');
         
-        // Dark asphalt base
-        ctx.fillStyle = '#1a1a1a';
+        // Dark asphalt base - lighter for mobile
+        if (this.isMobile) {
+            ctx.fillStyle = '#2a2a2a'; // Lighter asphalt for mobile
+        } else {
+            ctx.fillStyle = '#1a1a1a';
+        }
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         
         // Reduced texture noise for mobile
@@ -724,8 +749,8 @@ class GameEngine {
             const lightGeometry = new THREE.SphereGeometry(0.5, this.isMobile ? 6 : 8, this.isMobile ? 6 : 8);
             const lightMaterial = new THREE.MeshBasicMaterial({ 
                 color: 0x00ffff,
-                emissive: 0x00ffff,
-                emissiveIntensity: 0.5
+                emissive: 0x00ffff
+                // Note: emissiveIntensity removed - not supported by MeshBasicMaterial
             });
             
             const spacing = this.isMobile ? 100 : 50;
@@ -823,8 +848,8 @@ class GameEngine {
         const headlightGeometry = new THREE.SphereGeometry(0.2, 8, 8);
         const headlightMaterial = new THREE.MeshBasicMaterial({
             color: 0xffffff,
-            emissive: 0xffffff,
-            emissiveIntensity: 0.8
+            emissive: 0xffffff
+            // Note: emissiveIntensity removed - not supported by MeshBasicMaterial
         });
         
         const leftHeadlight = new THREE.Mesh(headlightGeometry, headlightMaterial);
@@ -853,8 +878,8 @@ class GameEngine {
         // Add taillights
         const taillightMaterial = new THREE.MeshBasicMaterial({
             color: 0xff0000,
-            emissive: 0xff0000,
-            emissiveIntensity: 0.3
+            emissive: 0xff0000
+            // Note: emissiveIntensity removed - not supported by MeshBasicMaterial
         });
         
         const leftTaillight = new THREE.Mesh(headlightGeometry, taillightMaterial);
@@ -945,8 +970,8 @@ class GameEngine {
                     const lightGeometry = new THREE.SphereGeometry(0.2, 8, 8);
                     const lightMaterial = new THREE.MeshBasicMaterial({
                         color: 0xffff00,
-                        emissive: 0xffff00,
-                        emissiveIntensity: 0.8
+                        emissive: 0xffff00
+                        // Note: emissiveIntensity removed - not supported by MeshBasicMaterial
                     });
                     const light = new THREE.Mesh(lightGeometry, lightMaterial);
                     light.position.set(i, 1.2, 0);
@@ -1324,8 +1349,8 @@ class GameEngine {
                 geometry = new THREE.SphereGeometry(0.1, 4, 4);
                 material = new THREE.MeshBasicMaterial({
                     color: 0xffff00,
-                    emissive: 0xffff00,
-                    emissiveIntensity: 0.5
+                    emissive: 0xffff00
+                    // Note: emissiveIntensity removed - not supported by MeshBasicMaterial
                 });
             } else {
                 geometry = new THREE.SphereGeometry(0.2, 8, 8);
@@ -2297,8 +2322,9 @@ class GameEngine {
     }
 
     animate() {
-        // Use consistent frame timing for mobile
+        // Optimized frame scheduling for mobile
         if (this.isMobile) {
+            // Use high-precision timing for mobile
             requestAnimationFrame(() => this.animate());
         } else {
             requestAnimationFrame(() => this.animate());
@@ -2307,7 +2333,7 @@ class GameEngine {
         try {
             const now = performance.now();
             
-            // Enhanced performance monitoring
+            // Enhanced performance monitoring with mobile optimizations
             this.performanceMonitor.frameCount++;
             const deltaTime = now - this.performanceMonitor.lastTime;
             
@@ -2317,27 +2343,34 @@ class GameEngine {
                 this.performanceMonitor.frameCount = 0;
                 this.performanceMonitor.lastTime = now;
                 
-                // Adaptive quality for mobile
+                // Adaptive quality for mobile with more aggressive adjustments
                 if (this.isMobile && this.performanceMonitor.adaptiveQuality) {
-                    if (currentFPS < 25) {
+                    if (currentFPS < 28) { // Slightly higher threshold
                         this.performanceMonitor.lowFPSFrames++;
-                        if (this.performanceMonitor.lowFPSFrames > 3) {
+                        if (this.performanceMonitor.lowFPSFrames > 2) { // Faster response
                             this.reduceQuality();
                         }
-                    } else if (currentFPS > 50) {
+                    } else if (currentFPS > 45) { // Higher threshold for quality increase
                         this.performanceMonitor.lowFPSFrames = 0;
                         if (this.performanceMonitor.qualityLevel < 2) {
                             this.increaseQuality();
                         }
                     }
                 }
-                
-                // Debug FPS display on mobile (comment out for production)
-                // console.log(`FPS: ${currentFPS}, Quality Level: ${this.performanceMonitor.qualityLevel}`);
             }
             
-            // Use variable timestep clamped to prevent large jumps
-            const delta = Math.min((deltaTime * 0.001), 1/30); // Max 30fps delta to prevent physics issues
+            // Optimized timestep calculation for mobile
+            let delta;
+            if (this.isMobile) {
+                // Use smaller, more stable timestep for mobile
+                delta = Math.min((deltaTime * 0.001), 1/25); // Cap at 25fps delta
+                // Skip frame processing if we're really struggling
+                if (deltaTime > 80) { // More than 80ms frame time
+                    return; // Skip this frame entirely
+                }
+            } else {
+                delta = Math.min((deltaTime * 0.001), 1/30); // Cap at 30fps delta for desktop
+            }
             
             this.updateGame(delta);
             
@@ -2346,10 +2379,14 @@ class GameEngine {
                 this.broadcastPlayerPosition();
             }
             
-            // Only render if everything is initialized
+            // Optimized rendering for mobile
             if (this.renderer && this.scene && this.camera) {
-                // Skip render frames on mobile if severely struggling
-                if (!this.isMobile || this.performanceMonitor.frameCount % 1 === 0) {
+                // Skip render frames if mobile is struggling
+                const shouldRender = !this.isMobile || 
+                                   this.performanceMonitor.frameCount % 1 === 0 || 
+                                   this.performanceMonitor.fps > 25;
+                
+                if (shouldRender) {
                     this.renderer.render(this.scene, this.camera);
                 }
             }
