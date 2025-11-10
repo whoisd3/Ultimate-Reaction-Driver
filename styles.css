@@ -28,6 +28,20 @@ body {
     width: 100%;
     height: 100%;
     z-index: 0;
+    /* Mobile performance optimizations */
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    -webkit-perspective: 1000px;
+    perspective: 1000px;
+    -webkit-transform: translate3d(0,0,0);
+    transform: translate3d(0,0,0);
+    /* Disable text selection and user interaction for better performance */
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
 }
 
 /* Modal Styles */
