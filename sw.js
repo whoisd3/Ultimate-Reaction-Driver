@@ -6,8 +6,11 @@ const urlsToCache = [
   '/styles.css',
   '/game.js',
   '/manifest.json',
-  'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
-  'https://cdn.jsdelivr.net/npm/simplepeer@9.11.1/simplepeer.min.js'
+  '/lib/three.min.js',
+  '/lib/simplepeer.min.js',
+  '/icon.png',
+  '/icon-192.png',
+  '/icon-512.png'
 ];
 
 // Install event - cache resources

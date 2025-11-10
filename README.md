@@ -98,6 +98,134 @@ Experience the ultimate web-based endless driver. Level up to unlock new game mo
 2. Look for the "Install" prompt in the address bar
 3. Click install to add to your home screen
 
+## Deployment
+
+### Firebase Hosting Deployment
+
+Firebase Hosting provides fast and secure hosting for your web app. Follow these steps to deploy your Ultimate Reaction Driver game:
+
+#### Prerequisites
+- Node.js (version 14 or higher)
+- A Google account
+- Firebase CLI
+
+#### Step 1: Install Firebase CLI
+```bash
+# Install Firebase CLI globally
+npm install -g firebase-tools
+
+# Verify installation
+firebase --version
+```
+
+#### Step 2: Login to Firebase
+```bash
+# Login to your Google account
+firebase login
+```
+
+#### Step 3: Initialize Firebase Project
+```bash
+# Navigate to your project directory
+cd /path/to/Ultimate-Reaction-Driver
+
+# Initialize Firebase
+firebase init hosting
+```
+
+When prompted:
+- **Select a default Firebase project**: Choose "Create a new project" or select existing project
+- **What do you want to use as your public directory?**: Press Enter (uses current directory)
+- **Configure as a single-page app**: `y` (Yes)
+- **Set up automatic builds and deploys with GitHub**: `n` (No, unless you want GitHub Actions)
+- **File index.html already exists. Overwrite?**: `n` (No)
+
+#### Step 4: Configure firebase.json
+Your `firebase.json` should look like this:
+```json
+{
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(js|css)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "max-age=31536000"
+          }
+        ]
+      },
+      {
+        "source": "sw.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "max-age=0"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+#### Step 5: Deploy to Firebase
+```bash
+# Deploy to Firebase Hosting
+firebase deploy
+
+# Or deploy only hosting
+firebase deploy --only hosting
+```
+
+#### Step 6: Access Your Deployed Game
+After deployment, you'll receive a hosting URL like:
+```
+https://your-project-id.web.app
+```
+
+Your game is now live and accessible worldwide!
+
+#### Optional: Set up Custom Domain
+1. Go to [Firebase Console](https://console.firebase.google.com/)
+2. Select your project
+3. Go to Hosting section
+4. Click "Add custom domain"
+5. Follow the verification steps
+
+#### Useful Firebase Commands
+```bash
+# Preview locally before deploying
+firebase serve
+
+# View deployment history
+firebase hosting:versions:list
+
+# Rollback to previous version
+firebase hosting:versions:rollback
+
+# Set deploy target for multiple sites
+firebase target:apply hosting production your-project-id
+```
+
+#### Troubleshooting
+- **Build errors**: Ensure all files are in the public directory
+- **404 errors**: Check your rewrites configuration in firebase.json
+- **Service Worker issues**: Make sure sw.js has proper cache headers
+- **SSL issues**: Firebase automatically provides HTTPS
+
 ## Game Modes Details
 
 ### Classic Mode

@@ -202,6 +202,17 @@
             <h2>Settings</h2>
             <div class="settings-list">
                 <div class="setting-item">
+                    <label>Username</label>
+                    <div class="username-setting">
+                        <input type="text" id="settings-username" placeholder="Enter username (3-15 characters)" maxlength="15">
+                        <button class="setting-btn" id="btn-save-username">Save</button>
+                    </div>
+                    <div class="setting-help">Your username will appear on leaderboards. Leave blank to play as Guest.</div>
+                    <div class="current-username-display">
+                        Current: <span id="current-username-display">Guest</span>
+                    </div>
+                </div>
+                <div class="setting-item">
                     <label>Music Volume</label>
                     <input type="range" id="music-volume" min="0" max="100" value="70">
                 </div>
@@ -258,6 +269,51 @@
     <!-- Scripts -->
     <script src="lib/three.min.js" onerror="console.warn('Three.js failed to load from lib, trying CDN...'); var s = document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'; document.head.appendChild(s);"></script>
     <script src="lib/simplepeer.min.js" onerror="console.warn('SimplePeer failed to load from lib, trying CDN...'); var s = document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/simplepeer@9.11.1/simplepeer.min.js'; document.head.appendChild(s);"></script>
+    
+    <!-- Firebase SDK -->
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+        import { getAnalytics, logEvent } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics.js';
+        // TODO: Add SDKs for Firebase products that you want to use
+        // https://firebase.google.com/docs/web/setup#available-libraries
+
+        // Your web app's Firebase configuration
+        // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+        const firebaseConfig = {
+          apiKey: "AIzaSyD7EJ0Pj2MqyGq_K8FSBoSy6snG6qx3Eeg",
+          authDomain: "ultimate-reaction-driver.firebaseapp.com",
+          projectId: "ultimate-reaction-driver",
+          storageBucket: "ultimate-reaction-driver.firebasestorage.app",
+          messagingSenderId: "830331959670",
+          appId: "1:830331959670:web:d4a2c254d3f876bc596257",
+          measurementId: "G-GP3S1W0S21"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
+        
+        console.log('Firebase initialized successfully');
+        
+        // Make Firebase available globally
+        window.firebaseApp = app;
+        window.firebaseAnalytics = analytics;
+        window.logAnalyticsEvent = logEvent;
+        
+        // Track page view
+        try {
+          if (window.location.hostname !== 'localhost') {
+            logEvent(analytics, 'page_view');
+            console.log('Analytics tracking enabled');
+          } else {
+            console.log('Analytics disabled for localhost');
+          }
+        } catch (error) {
+          console.log('Analytics not available:', error);
+        }
+    </script>
+    
     <script src="game.js"></script>
 </body>
 </html>

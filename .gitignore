@@ -8,3 +8,10 @@ dist/
 *.swo
 .cache/
 coverage/
+
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+.env.local
+.env.production

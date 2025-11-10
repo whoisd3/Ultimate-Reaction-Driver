@@ -1518,6 +1518,14 @@ class GameEngine {
         this.obstacleSpawnTimer = 0;
         this.playerLane = 0;
         
+        // Track game start with Firebase Analytics
+        if (window.firebaseAnalytics && window.logAnalyticsEvent) {
+            window.logAnalyticsEvent(window.firebaseAnalytics, 'game_start', {
+                game_mode: mode,
+                player_level: playerProgress.level
+            });
+        }
+        
         // Clear obstacles and power-ups
         this.obstacles.forEach(obs => this.scene.remove(obs));
         this.obstacles = [];
@@ -1585,6 +1593,18 @@ class GameEngine {
         
         // Update leaderboard
         playerProgress.addScore(this.currentMode, this.score);
+        
+        // Track game end event with Firebase Analytics
+        if (window.firebaseAnalytics && window.logAnalyticsEvent) {
+            window.logAnalyticsEvent(window.firebaseAnalytics, 'game_end', {
+                game_mode: this.currentMode,
+                score: this.score,
+                distance: Math.floor(this.distance),
+                time_played: Math.floor(this.timeElapsed),
+                xp_earned: xpEarned,
+                level_up: leveledUp
+            });
+        }
         
         // Save progress
         playerProgress.save();
@@ -2387,6 +2407,9 @@ class PlayerProgress {
             timeattack: [],
             survival: []
         };
+        // User management
+        this.username = null;
+        this.isGuest = false;
     }
 
     async load() {
@@ -2403,6 +2426,10 @@ class PlayerProgress {
                     }
                 });
             }
+            
+            // Load username from separate storage
+            this.username = localStorage.getItem('urd_username');
+            this.isGuest = localStorage.getItem('urd_is_guest') === 'true';
         } catch (error) {
             console.error('Failed to load progress:', error);
         }
@@ -2411,9 +2438,38 @@ class PlayerProgress {
     save() {
         try {
             localStorage.setItem('ultimateReactionDriver', JSON.stringify(this));
+            // Save username separately for easier access
+            if (this.username) {
+                localStorage.setItem('urd_username', this.username);
+            }
+            localStorage.setItem('urd_is_guest', this.isGuest.toString());
         } catch (error) {
             console.error('Failed to save progress:', error);
         }
+    }
+
+    setUser(username, isGuest = false) {
+        this.username = username;
+        this.isGuest = isGuest;
+        this.save();
+    }
+
+    clearUser() {
+        this.username = null;
+        this.isGuest = false;
+        localStorage.removeItem('urd_username');
+        localStorage.removeItem('urd_is_guest');
+    }
+
+    getDisplayName() {
+        if (this.isGuest || !this.username) {
+            return 'Guest';
+        }
+        return this.username;
+    }
+
+    canTrackLeaderboard() {
+        return !this.isGuest && this.username;
     }
 
     addXP(amount) {
@@ -2475,10 +2531,14 @@ class PlayerProgress {
             this.leaderboards[mode] = [];
         }
         
-        this.leaderboards[mode].push({
+        const entry = {
             score: score,
-            date: new Date().toISOString()
-        });
+            date: new Date().toISOString(),
+            username: this.getDisplayName(),
+            isGuest: this.isGuest
+        };
+        
+        this.leaderboards[mode].push(entry);
         
         // Keep only top 10
         this.leaderboards[mode].sort((a, b) => b.score - a.score);
@@ -2488,14 +2548,109 @@ class PlayerProgress {
     }
 }
 
+// User Management System
+class UserManager {
+    static validateUsername(username) {
+        if (!username || typeof username !== 'string') {
+            return { valid: false, error: 'Username is required' };
+        }
+        
+        const trimmed = username.trim();
+        
+        if (trimmed.length < 3) {
+            return { valid: false, error: 'Username must be at least 3 characters long' };
+        }
+        
+        if (trimmed.length > 15) {
+            return { valid: false, error: 'Username must be no more than 15 characters long' };
+        }
+        
+        if (!/^[a-zA-Z0-9_\-\s]+$/.test(trimmed)) {
+            return { valid: false, error: 'Username can only contain letters, numbers, spaces, hyphens, and underscores' };
+        }
+        
+        return { valid: true, username: trimmed };
+    }
+    
+    static saveUsername(username) {
+        if (!username || username.trim() === '') {
+            // Set as guest
+            playerProgress.setUser('Guest', true);
+            this.updateUsernameDisplay();
+            return { success: true, message: 'Playing as Guest' };
+        }
+        
+        const validation = this.validateUsername(username);
+        if (!validation.valid) {
+            return { success: false, message: validation.error };
+        }
+        
+        playerProgress.setUser(validation.username, false);
+        this.updateUsernameDisplay();
+        return { success: true, message: 'Username saved!' };
+    }
+    
+    static updateUsernameDisplay() {
+        const displayName = playerProgress.getDisplayName();
+        const currentUsernameElement = document.getElementById('current-username-display');
+        if (currentUsernameElement) {
+            currentUsernameElement.textContent = displayName;
+        }
+    }
+    
+    static loadUsernameInSettings() {
+        const usernameInput = document.getElementById('settings-username');
+        if (usernameInput) {
+            if (playerProgress.isGuest || !playerProgress.username) {
+                usernameInput.value = '';
+            } else {
+                usernameInput.value = playerProgress.username;
+            }
+        }
+        this.updateUsernameDisplay();
+    }
+    
+    static showUsernameMessage(message, isError = false) {
+        // Create or update message element
+        const settingsItem = document.getElementById('settings-username').closest('.setting-item');
+        let messageElement = settingsItem.querySelector('.username-message');
+        
+        if (!messageElement) {
+            messageElement = document.createElement('div');
+            messageElement.className = 'username-message';
+            settingsItem.appendChild(messageElement);
+        }
+        
+        messageElement.textContent = message;
+        messageElement.style.color = isError ? '#ff006e' : '#00d4ff';
+        messageElement.style.fontSize = '0.9rem';
+        messageElement.style.marginTop = '0.5rem';
+        
+        // Clear message after 3 seconds
+        setTimeout(() => {
+            if (messageElement.parentNode) {
+                messageElement.textContent = '';
+            }
+        }, 3000);
+    }
+}
+
 // Global instances
 const playerProgress = new PlayerProgress();
 let game;
 
 // UI Event Handlers
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     // Initialize game
     game = new GameEngine();
+    
+    // Load player progress
+    await playerProgress.load();
+    
+    // If no username is set, default to guest
+    if (!playerProgress.username) {
+        playerProgress.setUser('Guest', true);
+    }
     
     // Main menu buttons
     document.getElementById('btn-classic').addEventListener('click', () => {
@@ -2534,6 +2689,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-settings').addEventListener('click', () => {
         document.getElementById('main-menu').classList.add('hidden');
         document.getElementById('settings-menu').classList.remove('hidden');
+        // Load current username into settings
+        UserManager.loadUsernameInSettings();
     });
     
     // HUD buttons
@@ -2627,6 +2784,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // Settings
+    document.getElementById('btn-save-username').addEventListener('click', () => {
+        const username = document.getElementById('settings-username').value;
+        const result = UserManager.saveUsername(username);
+        UserManager.showUsernameMessage(result.message, !result.success);
+    });
+    
+    // Enter key for username save
+    document.getElementById('settings-username').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            document.getElementById('btn-save-username').click();
+        }
+    });
+    
     document.getElementById('btn-settings-back').addEventListener('click', () => {
         document.getElementById('settings-menu').classList.add('hidden');
         document.getElementById('main-menu').classList.remove('hidden');
@@ -2734,11 +2904,29 @@ function updateLeaderboard(mode) {
     scores.forEach((entry, index) => {
         const item = document.createElement('div');
         item.className = 'leaderboard-entry';
+        
+        // Add special styling for top 3
+        let rankClass = 'leaderboard-rank';
+        if (index === 0) rankClass += ' top-rank';
+        else if (index === 1) rankClass += ' second-rank';
+        else if (index === 2) rankClass += ' third-rank';
+        
+        // Show username or "Guest" for older entries without usernames
+        const displayName = entry.username || 'Anonymous';
+        const isCurrentUser = !entry.isGuest && entry.username === playerProgress.username;
+        const userNameClass = isCurrentUser ? 'leaderboard-username current-user-score' : 'leaderboard-username';
+        
         item.innerHTML = `
-            <span class="leaderboard-rank">#${index + 1}</span>
-            <span>${new Date(entry.date).toLocaleDateString()}</span>
+            <span class="${rankClass}">#${index + 1}</span>
+            <span class="${userNameClass}">${displayName}${entry.isGuest ? ' (Guest)' : ''}</span>
             <span class="leaderboard-score">${entry.score}</span>
         `;
+        
+        if (isCurrentUser) {
+            item.style.background = 'rgba(0, 212, 255, 0.2)';
+            item.style.border = '1px solid var(--primary-color)';
+        }
+        
         list.appendChild(item);
     });
 }
